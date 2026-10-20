@@ -165,7 +165,7 @@ export function App() {
             </div>
             <nav class="tabs" aria-label="Secciones">
               {TABS.map((t) => (
-                <button type="button" class={`tab ${tab === t.id ? 'active' : ''}`} aria-current={tab === t.id ? 'page' : undefined} onClick={() => setTab(t.id)}>
+                <button type="button" class={`tab ${tab === t.id ? 'active' : ''}`} aria-current={tab === t.id ? 'page' : undefined} aria-label={t.label} title={t.label} onClick={() => setTab(t.id)}>
                   <Icon name={t.icon} size={20} />
                   <span>{t.label}</span>
                 </button>

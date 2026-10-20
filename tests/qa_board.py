@@ -100,7 +100,7 @@ if __name__ == '__main__':
             page = ctx.new_page()
             errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
             page.goto(BASE); page.wait_for_timeout(900)
-            page.locator('.world-card').first.click(); page.fill('#gate-name', 'QA'); page.fill('#gate-pass', 'benko1')
+            page.locator('.world-card', has_text='Benko Gambit').first.click(); page.fill('#gate-name', 'QA'); page.fill('#gate-pass', 'benko1')
             page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1500)
             ok &= check(page, f'{name}: start of line (black)')
             def sq(s):
@@ -131,7 +131,11 @@ if __name__ == '__main__':
             ok &= check(page, f'{name}: self-heal after collapsed board')
             page.set_viewport_size({'width': vp['width'] - 120, 'height': vp['height'] - 90}); page.wait_for_timeout(500)
             ok &= check(page, f'{name}: after resize')
-            page.set_viewport_size(vp); page.wait_for_timeout(400)
+            # turning the device (or the window) over: portrait <-> landscape layouts
+            page.set_viewport_size({'width': vp['height'], 'height': vp['width']}); page.wait_for_timeout(500)
+            ok &= check(page, f'{name}: rotated')
+            page.set_viewport_size(vp); page.wait_for_timeout(500)
+            ok &= check(page, f'{name}: rotated back')
             # fresh line for pixel centering
             page.reload(); page.wait_for_timeout(1500)
             artwork_centering(page, name)

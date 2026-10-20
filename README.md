@@ -11,6 +11,14 @@ npm test
 npm run typecheck
 ```
 
+Pruebas visuales (con `npm run dev` en marcha; requieren Python con Playwright):
+
+```bash
+python3 tests/qa_board.py  /tmp/qa   # piezas exactas tras cambiar de pestaña, redimensionar y girar
+python3 tests/qa_layout.py /tmp/qa   # móviles, tabletas y escritorio, en vertical y horizontal
+python3 tests/qa_hint.py             # la flecha de ayuda desaparece cuando debe
+```
+
 ## Estructura
 
 | Carpeta | Contenido |

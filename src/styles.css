@@ -48,8 +48,11 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-.cg-wrap { box-sizing: content-box; }
-html, body { height: 100%; }
+.cg-wrap { box-sizing: content-box; -webkit-touch-callout: none; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overscroll-behavior: none; } /* no pull-to-refresh or rubber-band in the middle of a game */
+button, a, input, select, textarea, label { touch-action: manipulation; } /* no double-tap zoom on controls */
+.player, .clock, .pill, .tabs, .btn, .moves, .status-card { -webkit-user-select: none; user-select: none; }
 body {
   margin: 0;
   background: var(--bg);
@@ -87,7 +90,7 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
 /* ---------- app shell ---------- */
 .app { height: 100%; }
 .app.view-world { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.app.view-portal, .app.view-room { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.app.view-portal, .app.view-room { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 
 .topbar {
   display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 18px;
@@ -120,10 +123,11 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
 .tab.active .icon { color: var(--gold); }
 .content { min-height: 0; position: relative; }
 .screen { height: 100%; }
-.screen.page { overflow-y: auto; -webkit-overflow-scrolling: touch; position: relative; z-index: 1; }
-/* The board screen is never removed from layout: it stays sized behind other screens so the board never has to re-measure. */
-.train-layer { position: absolute; inset: 0; }
-.train-layer.is-hidden { visibility: hidden; pointer-events: none; }
+.screen.page { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; position: relative; z-index: 1; }
+/* The board screen is never removed from layout: it stays sized behind other screens so the board never has to re-measure.
+   height:auto matters: with .screen's height:100% the layer ignored `bottom` and slid under the phone tab bar. */
+.screen.train-layer { position: absolute; inset: 0; height: auto; }
+.screen.train-layer.is-hidden { visibility: hidden; pointer-events: none; }
 .loading { display: flex; align-items: center; gap: 12px; color: var(--text-dim); padding: 24px 0; }
 
 /* ---------- portal ---------- */
@@ -301,10 +305,14 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
 
 /* ---------- training ---------- */
 .train {
+  /* --layout and the limits are read by src/lib/fit.ts, which writes the measured --board; the calc is only the first paint */
+  --layout: wide;
+  --board-max: 780px;
+  --board-min: 240px;
   --side-w: 340px;
   --strip-h: 50px;
-  --board: min(calc(100dvh - var(--topbar-h) - var(--nav-h) - 2 * var(--strip-h) - 64px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), calc(100vw - var(--side-w) - 88px), 780px);
-  height: 100%; overflow-y: auto;
+  --board: min(calc(100vh - var(--topbar-h) - var(--nav-h) - 2 * var(--strip-h) - 64px), calc(100vw - var(--side-w) - 88px), 780px);
+  height: 100%; overflow-y: auto; overscroll-behavior: contain;
   display: grid; grid-template-columns: var(--board) var(--side-w); gap: 24px; justify-content: center; align-content: start;
   padding-block: 16px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -400,8 +408,9 @@ code { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; 
 .pill.win { background: var(--good-soft); color: var(--good); } .pill.loss { background: var(--bad-soft); color: var(--bad); } .pill.draw { background: rgba(255, 255, 255, 0.06); color: var(--draw); }
 .status-text { margin: 0; color: var(--text-dim); font-size: 15.5px; }
 .err-count { color: var(--bad); font-weight: 700; }
+.lbl-short { display: none; }
 
-.moves { flex: 1; min-height: 120px; overflow-y: auto; background: rgba(4, 10, 22, 0.6); border: 1px solid var(--hair-soft); border-radius: 4px; padding: 6px 0; font-variant-numeric: tabular-nums; }
+.moves { flex: 1; min-height: 120px; overflow-y: auto; overscroll-behavior: contain; background: rgba(4, 10, 22, 0.6); border: 1px solid var(--hair-soft); border-radius: 4px; padding: 6px 0; font-variant-numeric: tabular-nums; }
 .moves-empty { color: var(--text-mute); font-size: 14.5px; padding: 8px 14px; margin: 0; }
 .move-row { display: grid; grid-template-columns: 3.2em 1fr 1fr; align-items: center; padding: 1px 10px; font-size: 15.5px; }
 .move-row:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
@@ -590,39 +599,19 @@ button.mv:hover { background: var(--gold-soft); }
 .toast { background: linear-gradient(180deg, #13294b, #0b1a33); color: var(--text); border: 1px solid var(--hair); padding: 11px 14px; border-radius: 3px; font-size: 15px; font-weight: 600; box-shadow: var(--shadow); animation: fade .2s ease; }
 .toast.good { border-color: rgba(143, 196, 108, 0.6); color: #d6efc6; } .toast.bad { border-color: rgba(226, 105, 76, 0.7); color: #ffd2c6; }
 
-/* ---------- phones & tablets ---------- */
+/* ---------- phones & tablets ----------
+   Three layouts for the training screen, chosen by CSS (--layout) and sized by src/lib/fit.ts:
+   wide    — board + side panel (desktop, tablets in landscape)
+   stacked — board over a compact two-row panel, tab bar at the bottom (phones and tablets held upright)
+   side    — phones held sideways and short windows: board on the left, everything else beside it */
 @media (max-width: 900px) {
-  :root { --topbar-h: 50px; --nav-h: 64px; }
+  :root { --topbar-h: 50px; }
   .topbar { grid-template-columns: auto 1fr; gap: 10px; }
   .world-badge { justify-self: end; max-width: 56vw; }
-  .tabs {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; justify-content: space-around; gap: 0;
-    background: linear-gradient(180deg, #0c1428, #05080f); border-top: 1px solid var(--gold-lo);
-    padding: 4px max(6px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
-    height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
-  }
-  .tab { flex-direction: column; gap: 3px; font-size: 9.5px; letter-spacing: .06em; padding: 6px 2px; flex: 1; border-bottom: 0; border-top: 2px solid transparent; }
-  .tab.active { border-top-color: var(--gold); background: linear-gradient(0deg, transparent 40%, rgba(220, 183, 94, 0.08)); }
-  .content { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
-  .train-layer { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
   .wm-main { font-size: 34px; }
   .wm-main.small { font-size: 18px; }
   .wm-sub { font-size: 9.5px; letter-spacing: .32em; }
-
-  .train {
-    --strip-h: 44px;
-    --board: min(calc(100vw - 32px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)), calc(100dvh - var(--topbar-h) - var(--nav-h) - 2 * var(--strip-h) - 150px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)), 640px);
-    grid-template-columns: var(--board); gap: 10px; padding-block: 8px 12px;
-  }
-  .side-col { max-height: none; padding-top: 0; gap: 8px; }
   .clock { font-size: 21px; min-width: 96px; padding: 3px 10px; }
-  .status-card { padding: 10px 12px; gap: 8px; }
-  .moves { display: flex; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; min-height: 0; flex: none; padding: 6px 8px; gap: 2px; scrollbar-width: none; }
-  .moves::-webkit-scrollbar { display: none; }
-  .move-row { display: inline-flex; gap: 2px; padding: 0 2px; flex: none; background: none !important; }
-  .mno { padding-left: 4px; }
-  .train .legend { display: none; }
-  .actions .btn { flex: 1; }
   .sheet-backdrop { place-items: end center; padding: 0; }
   .sheet { width: 100%; max-height: 90dvh; border-radius: 10px 10px 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
   .result-big { font-size: 34px; }
@@ -640,6 +629,119 @@ button.mv:hover { background: var(--gold-soft); }
   .room-title { font-size: 14px; letter-spacing: .1em; }
   .room-top .btn.small { padding: 5px 8px; font-size: 11.5px; }
   .tally b { font-size: 24px; }
+}
+
+/* tabs in the top bar but not much room: icons only (the name stays as tooltip and for screen readers) */
+@media (min-width: 901px) and (max-width: 1240px), (orientation: landscape) and (max-width: 1240px) {
+  .topbar { grid-template-columns: auto auto 1fr; }
+  .tab { padding: 10px 12px; }
+  .tab span { display: none; }
+}
+
+/* stacked: phones and tablets held upright */
+@media (max-width: 900px) and (orientation: portrait) {
+  :root { --nav-h: 58px; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; justify-content: space-around; gap: 0;
+    background: linear-gradient(180deg, #0c1428, #05080f); border-top: 1px solid var(--gold-lo);
+    padding: 3px max(6px, env(safe-area-inset-right, 0px)) calc(3px + env(safe-area-inset-bottom, 0px)) max(6px, env(safe-area-inset-left, 0px));
+    height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  }
+  .tab { flex-direction: column; gap: 3px; font-size: 9.5px; letter-spacing: .06em; padding: 5px 2px; flex: 1; min-width: 0; border-bottom: 0; border-top: 2px solid transparent; }
+  .tab.active { border-top-color: var(--gold); background: linear-gradient(0deg, transparent 40%, rgba(220, 183, 94, 0.08)); }
+  .content { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
+  .screen.train-layer { bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
+
+  .train {
+    --layout: stacked; --board-max: 680px; --board-min: 200px; --strip-h: 44px;
+    --board: min(calc(100vw - 32px), 640px);
+    /* when the height limits the board (short phones), strips and panel keep a comfortable width and the board is centred */
+    grid-template-columns: var(--panel, max(var(--board), min(100%, 440px))); gap: 8px; padding-block: 6px 10px;
+  }
+  .board-col { gap: 6px; }
+  .board-area { width: var(--board); margin-inline: auto; }
+  .player-name { font-size: 15px; }
+  .player-caption { font-size: 13px; }
+  .side-col {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "status actions" "moves moves";
+    gap: 6px; max-height: none; min-height: auto; padding-top: 0; /* min-height:auto: the row must never collapse under its content */
+  }
+  .side-col.confirming { grid-template-areas: "actions actions" "moves moves"; }
+  .side-col.confirming .status-card { display: none; }
+  .status-card { grid-area: status; }
+  .actions { grid-area: actions; flex-wrap: nowrap; }
+  .actions .btn { min-height: 44px; padding: 6px 12px; font-size: 12.5px; gap: 6px; }
+  .confirm { flex-wrap: nowrap; width: 100%; gap: 6px; min-height: 44px; }
+  .confirm > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .confirm .btn.small { min-height: 40px; }
+  .moves {
+    grid-area: moves; display: flex; flex-wrap: nowrap; align-items: center; overflow-x: auto; overflow-y: hidden;
+    height: 34px; min-height: 0; flex: none; padding: 0 8px; gap: 2px; scrollbar-width: none;
+  }
+  /* the oldest moves fade out instead of being cut mid-letter */
+  .moves.overflowing { -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 30px); mask-image: linear-gradient(90deg, transparent 0, #000 30px); }
+  .moves::-webkit-scrollbar { display: none; }
+  .moves-empty { padding: 0 4px; font-size: 13.5px; white-space: nowrap; }
+  .move-row { display: inline-flex; gap: 2px; padding: 0 2px; flex: none; background: none !important; font-size: 15px; }
+  .mno { padding-left: 4px; }
+  .train .legend { display: none; }
+}
+@media (max-width: 380px) and (orientation: portrait) {
+  .actions .btn .icon { display: none; }
+  .actions .btn { padding: 6px 10px; }
+  .clock { min-width: 84px; font-size: 20px; }
+}
+
+/* side: phones held sideways and short windows */
+@media (orientation: landscape) and (max-height: 560px) {
+  :root { --topbar-h: 44px; --nav-h: 0px; }
+  .topbar { gap: 12px; }
+  .wm-main.small { font-size: 17px; }
+  .world-badge { font-size: 12px; padding: 2px 10px 2px 4px; max-width: 34vw; }
+  .tab { padding: 6px 10px; }
+  .train {
+    --layout: side; --board-max: 900px; --board-min: 150px; --side-min: 240px; --strip-h: 40px;
+    --board: calc(100vh - var(--topbar-h) - 16px);
+    grid-template-columns: var(--board) minmax(var(--side-min), 380px);
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "board top" "board status" "board moves" "board actions" "board bottom";
+    column-gap: 16px; row-gap: 6px; align-content: stretch; padding-block: 8px;
+  }
+  .board-col, .side-col { display: contents; }
+  .player.top { grid-area: top; }
+  .player.bottom { grid-area: bottom; }
+  .board-area, .board-placeholder { grid-area: board; align-self: start; }
+  .status-card { grid-area: status; }
+  .moves { grid-area: moves; min-height: 0; }
+  .actions { grid-area: actions; flex-wrap: nowrap; }
+  .actions .btn { flex: 1; min-height: 40px; }
+  .confirm { flex-wrap: nowrap; width: 100%; }
+  .train .legend { display: none; }
+  .avatar, .me-badge { width: 32px; height: 32px; }
+  .player-name { font-size: 15px; }
+  .player-caption { font-size: 12.5px; }
+  .clock { font-size: 20px; min-width: 90px; padding: 2px 10px; }
+  .move-row { font-size: 14.5px; }
+  .sheet { max-height: calc(100dvh - 16px); }
+}
+
+/* compact status bar (stacked and side): phase, a short state and the button that matters, on one row */
+@media (max-width: 900px) and (orientation: portrait), (orientation: landscape) and (max-height: 560px) {
+  .lbl-long { display: none; }
+  .lbl-short { display: inline; }
+  .status-card { flex-direction: row; align-items: center; gap: 8px; padding: 0 6px 0 8px; min-height: 44px; min-width: 0; }
+  .status-head { flex: none; flex-wrap: nowrap; }
+  .status-head .rep-name { display: none; }
+  .status-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
+  .status-card.has-hint .status-text { display: none; }
+  .status-card .btn { flex: none; margin-left: auto; min-height: 34px; padding: 4px 10px; font-size: 12.5px; }
+  .status-card .btn.block { width: auto; }
+  .pill { font-size: 11.5px; padding: 4px 8px; }
+}
+/* tablets held upright: same compact bar, full wording */
+@media (min-width: 600px) and (max-width: 900px) and (orientation: portrait) {
+  .lbl-long { display: inline; }
+  .lbl-short { display: none; }
 }
 @media (max-width: 520px) {
   .world-grid { grid-template-columns: 1fr 1fr; gap: 12px; }

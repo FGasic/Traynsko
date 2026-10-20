@@ -12,6 +12,7 @@ import type { Settings } from '../lib/prefs';
 import type { NewGame } from '../lib/api';
 import { fmtClock } from '../lib/clock';
 import { sound } from '../lib/sound';
+import { useBoardFit } from '../lib/fit';
 
 export interface SaveResult { ok: boolean; message: string }
 
@@ -57,9 +58,14 @@ export function TrainScreen(p: Props) {
   const [confirmResign, setConfirmResign] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [engineErr, setEngineErr] = useState(false);
-  const [hintMove, setHintMove] = useState<string | null>(null);
+  // The hint lives in a ref as well: board callbacks are created once and must always see the current value.
+  const [hintMove, setHintState] = useState<string | null>(null);
+  const hintRef = useRef<string | null>(null);
+  const setHintMove = (v: string | null) => { hintRef.current = v; setHintState(v); };
   const wake = useRef<any>(null);
-  const movesEnd = useRef<HTMLDivElement>(null);
+  const movesRef = useRef<HTMLElement>(null);
+  const trainRef = useRef<HTMLDivElement>(null);
+  useBoardFit(trainRef);
 
   const pool = useMemo(() => {
     const out: { rep: RepMeta; line: Line }[] = [];
@@ -77,6 +83,7 @@ export function TrainScreen(p: Props) {
     if (!api) return;
     if (!se) {
       api.set({ fen: 'start', lastMove: undefined, check: false, movable: { color: undefined, dests: new Map() }, premovable: { enabled: false } });
+      api.setAutoShapes([]);
       return;
     }
     const c = se.chess;
@@ -91,7 +98,16 @@ export function TrainScreen(p: Props) {
       premovable: { enabled: se.phase === 'bot' },
       highlight: { lastMove: true, check: true, custom: new Map() },
     });
-    if (!hintMove) api.setAutoShapes([]);
+    paintHint();
+  }
+
+  /** The hint arrow is derived from the position: it is drawn only while it is still the move to play, never otherwise. */
+  function paintHint() {
+    const api = cg.current, se = sess.current, h = hintRef.current;
+    if (!api) return;
+    const valid = !!h && !!se && se.phase === 'line' && se.expected === h && se.chess.turn() === se.cfg.userColor;
+    if (h && !valid) { hintRef.current = null; setHintState(null); }
+    api.setAutoShapes(valid ? [{ orig: h!.slice(0, 2) as Key, dest: h!.slice(2, 4) as Key, brush: 'green' }] : []);
   }
 
   /* ---------- session lifecycle ---------- */
@@ -176,7 +192,13 @@ export function TrainScreen(p: Props) {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => { movesEnd.current?.scrollIntoView({ block: 'nearest' }); });
+  useEffect(() => {
+    const el = movesRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    el.scrollLeft = el.scrollWidth;
+    el.classList.toggle('overflowing', el.scrollWidth > el.clientWidth + 1);
+  });
 
   /* ---------- moves ---------- */
   function commit(uci: string) {
@@ -216,7 +238,7 @@ export function TrainScreen(p: Props) {
     const mv = se?.hint();
     if (!mv || !cg.current) return;
     setHintMove(mv);
-    cg.current.setAutoShapes([{ orig: mv.slice(0, 2) as Key, dest: mv.slice(2, 4) as Key, brush: 'green' }]);
+    paintHint();
   }
 
   async function doSave() {
@@ -259,11 +281,13 @@ export function TrainScreen(p: Props) {
   const userMoves = s ? s.played.filter((x) => x.by === 'user').length : 0;
 
   if (!p.linesLoaded) {
-    return <div class="train"><div class="board-col"><div class="board-placeholder"><div class="spinner" />Preparando tu repertorio…</div></div></div>;
+    return <div class="train" ref={trainRef}><div class="board-col"><div class="board-placeholder"><div class="spinner" />Preparando tu repertorio…</div></div></div>;
   }
 
+  const hintable = phase === 'line' && !!s && s.attempts >= 3 && !hintMove;
+
   return (
-    <div class="train">
+    <div class="train" ref={trainRef}>
       <div class="board-col">
         <PlayerStrip
           top
@@ -347,32 +371,37 @@ export function TrainScreen(p: Props) {
         />
       </div>
 
-      <aside class="side-col">
-        <section class="status-card">
+      <aside class={`side-col ${confirmResign && phase === 'bot' ? 'confirming' : ''}`}>
+        <section class={`status-card ${hintable ? 'has-hint' : ''}`}>
           <div class="status-head">
-            {phase === 'line' && <span class="pill brass">I · Tu línea</span>}
-            {phase === 'bot' && <span class="pill blue">II · Partida</span>}
+            {phase === 'line' && <span class="pill brass"><span class="lbl-long">I · Tu línea</span><span class="lbl-short">Línea</span></span>}
+            {phase === 'bot' && <span class="pill blue"><span class="lbl-long">II · Partida</span><span class="lbl-short">Partida</span></span>}
             {phase === 'over' && <span class={`pill ${s?.outcome}`}>{outcomeText} · {s?.result?.replace('1/2-1/2', '½–½')}</span>}
             {m && <span class="rep-name" title={m.rep.name}>{m.rep.name}</span>}
           </div>
           {phase === 'line' && s && (
             <p class="status-text">
-              {s.userTurn ? 'Tu turno: juega la jugada de tu repertorio.' : 'El rival responde con la línea…'}
-              {s.mistakes > 0 && <span class="err-count"> · {s.mistakes} {s.mistakes === 1 ? 'error' : 'errores'}</span>}
+              {s.userTurn
+                ? <><span class="lbl-long">Tu turno: juega la jugada de tu repertorio.</span><span class="lbl-short">Tu jugada</span></>
+                : <><span class="lbl-long">El rival responde con la línea…</span><span class="lbl-short">Responde el rival…</span></>}
+              {s.mistakes > 0 && <span class="err-count"> · {s.mistakes}<span class="lbl-long"> {s.mistakes === 1 ? 'error' : 'errores'}</span><span class="lbl-short"> ✗</span></span>}
             </p>
           )}
           {phase === 'bot' && s && (
-            <p class="status-text">{s.thinking ? 'El bot está pensando…' : 'Tu turno.'} {engineErr && <span class="err-count">El motor no pudo cargarse en este dispositivo.</span>}</p>
+            <p class="status-text">
+              {s.thinking ? <><span class="lbl-long">El bot está pensando…</span><span class="lbl-short">Pensando…</span></> : 'Tu turno.'}
+              {engineErr && <span class="err-count"> El motor no pudo cargarse en este dispositivo.</span>}
+            </p>
           )}
           {phase === 'over' && !sheetOpen && (
-            <button type="button" class="btn primary block" onClick={() => setSheetOpen(true)}>Ver resumen y guardar</button>
+            <button type="button" class="btn primary block" onClick={() => setSheetOpen(true)}><span class="lbl-long">Ver resumen y guardar</span><span class="lbl-short">Resumen</span></button>
           )}
-          {phase === 'line' && s && s.attempts >= 3 && !hintMove && (
-            <button type="button" class="btn ghost small" onClick={showHint}><Icon name="eye" size={16} />Ver la jugada</button>
+          {hintable && (
+            <button type="button" class="btn ghost small" onClick={showHint}><Icon name="eye" size={16} /><span class="lbl-long">Ver la jugada</span><span class="lbl-short">Ver jugada</span></button>
           )}
         </section>
 
-        <section class="moves" aria-label="Jugadas">
+        <section class="moves" aria-label="Jugadas" ref={movesRef}>
           {rows.length === 0 && <p class="moves-empty">Las jugadas aparecerán aquí.</p>}
           {rows.map((r) => (
             <div class="move-row">
@@ -381,7 +410,6 @@ export function TrainScreen(p: Props) {
               <span class={`mv ${r.bc}`}>{r.b?.san ?? ''}</span>
             </div>
           ))}
-          <div ref={movesEnd} />
         </section>
         <div class="legend"><span class="lg lg-line" />Línea de repertorio<span class="lg lg-free" />Partida libre</div>
 
@@ -394,13 +422,13 @@ export function TrainScreen(p: Props) {
           )}
           {phase === 'bot' && confirmResign && (
             <div class="confirm">
-              <span>¿Abandonar la partida?</span>
+              <span><span class="lbl-long">¿Abandonar la partida?</span><span class="lbl-short">¿Abandonar?</span></span>
               <button type="button" class="btn danger small" onClick={() => { setConfirmResign(false); sess.current?.resign(); }}>Sí, abandonar</button>
               <button type="button" class="btn ghost small" onClick={() => setConfirmResign(false)}>Seguir</button>
             </div>
           )}
           {phase === 'over' && (
-            <button type="button" class="btn primary" onClick={newSession}><Icon name="next" size={18} />Siguiente línea</button>
+            <button type="button" class="btn primary" onClick={newSession}><Icon name="next" size={18} /><span class="lbl-long">Siguiente línea</span><span class="lbl-short">Siguiente</span></button>
           )}
         </section>
       </aside>
