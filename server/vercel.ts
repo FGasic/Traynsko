@@ -1,6 +1,6 @@
-// Vercel Function: every /api/* request is rewritten here (see vercel.json).
-import { createApp } from '../server/core';
-import { redisKV, type KV } from '../server/kv';
+// Vercel Function entry: build.mjs bundles this file into .vercel/output/functions/api.func.
+import { createApp } from './core';
+import { redisKV, type KV } from './kv';
 
 let kvPromise: Promise<KV> | null = null;
 const getKV = () => (kvPromise ??= redisKV().catch((e) => { kvPromise = null; throw e; }));

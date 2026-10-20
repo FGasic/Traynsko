@@ -22,7 +22,6 @@
     "src",
     "server",
     "shared",
-    "api",
     "dev"
   ]
 }

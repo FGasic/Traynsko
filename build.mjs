@@ -60,3 +60,25 @@ writeFileSync(`${out}/index.html`, html);
 for (const f of ['icon.svg', 'icon-192.png', 'icon-512.png', 'manifest.webmanifest']) copyFileSync(`assets/${f}`, `${out}/${f}`);
 for (const f of ['stockfish-19-lite-single.js', 'stockfish-19-lite-single.wasm', 'stockfish-19-asm.js']) copyFileSync(`node_modules/stockfish/bin/${f}`, `${out}/${f}`);
 console.log('built', `app.${v}.js`, (code.length / 1024).toFixed(0) + ' KB');
+
+// ---------- Vercel Build Output API: static files + one Node function for /api/* ----------
+import { rmSync, cpSync } from 'fs';
+const vo = '.vercel/output';
+rmSync(vo, { recursive: true, force: true });
+mkdirSync(`${vo}/functions/api.func`, { recursive: true });
+cpSync(out, `${vo}/static`, { recursive: true });
+await build({
+  entryPoints: ['server/vercel.ts'], bundle: true, platform: 'node', format: 'cjs', target: 'node20',
+  outfile: `${vo}/functions/api.func/index.js`, minify: false, legalComments: 'none', logLevel: 'warning',
+});
+writeFileSync(`${vo}/functions/api.func/.vc-config.json`, JSON.stringify({ runtime: 'nodejs22.x', handler: 'index.js', launcherType: 'Nodejs', shouldAddHelpers: true, maxDuration: 30 }, null, 2));
+writeFileSync(`${vo}/config.json`, JSON.stringify({
+  version: 3,
+  routes: [
+    { src: '/(stockfish-.*|fonts/.*|app\\..*)', headers: { 'Cache-Control': 'public, max-age=31536000, immutable' }, continue: true },
+    { src: '/(.*)', headers: { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin' }, continue: true },
+    { src: '/api/(.*)', dest: '/api?__path=$1' },
+    { handle: 'filesystem' },
+  ],
+}, null, 2));
+console.log('vercel output ready');
