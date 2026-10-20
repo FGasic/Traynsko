@@ -1,0 +1,56 @@
+import { createApp } from '../server/core';
+import { memoryKV } from '../server/kv';
+import { hashSecret } from '../server/crypto';
+import { parseRepertoire } from '../src/lib/pgn';
+import { readFileSync } from 'node:fs';
+
+const kv = memoryKV();
+const app = createApp(async () => kv, hashSecret('Maestra-123', 1 << 12));
+let ok = 0, bad = 0;
+const check = (cond: boolean, msg: string) => { if (cond) ok++; else { bad++; console.log('FAIL', msg); } };
+const call = (method: string, path: string, body: any = {}, auth?: string, ip = '1.1.1.1') => {
+  const u = new URL('http://x' + path);
+  return app({ method, path: u.pathname, query: u.searchParams, auth: auth ? 'Bearer ' + auth : undefined, body, ip });
+};
+
+(async () => {
+  let r = await call('GET', '/api/worlds'); check(r.status === 200 && (r.body as any).worlds.length === 0, 'empty worlds');
+  r = await call('POST', '/api/admin/login', { password: 'nope' }); check(r.status === 401, 'bad master');
+  r = await call('POST', '/api/admin/login', { password: 'Maestra-123' }); check(r.status === 200, 'master ok');
+  const admin = (r.body as any).token;
+  r = await call('POST', '/api/admin/worlds', { name: 'Mundo Benko', password: 'Peon2025', emblem: 'pawn', hue: 30 }, admin); check(r.status === 200, 'create world');
+  const wid = (r.body as any).world.id;
+  r = await call('POST', '/api/admin/worlds', { name: 'X', password: 'ab' }, admin); check(r.status === 400, 'short pw rejected');
+  const lines = parseRepertoire(readFileSync('tests/fixtures/ejemplo.pgn', 'utf8')).lines;
+  r = await call('POST', `/api/admin/worlds/${wid}/reps`, { name: 'Blancas', color: 'w', lines }, admin); check(r.status === 200, 'add rep');
+  r = await call('POST', `/api/admin/worlds/${wid}/reps`, { name: 'Malo', color: 'w', lines: [{ id: 'x', uci: 'e2e4 hack' }] }, admin); check(r.status === 400, 'bad rep rejected');
+  r = await call('GET', '/api/worlds'); check((r.body as any).worlds[0].lineCount === 1, 'public line count');
+  check(!JSON.stringify(r.body).includes('Peon2025'), 'public list hides password');
+  r = await call('POST', '/api/enter', { world: wid, password: 'mal', name: 'Ana' }); check(r.status === 401, 'wrong world pw');
+  r = await call('POST', '/api/enter', { world: wid, password: '  peon2025 ' }); check(r.status === 200, 'world pw case-insensitive');
+  const tok = (r.body as any).token;
+  r = await call('GET', '/api/content', {}, tok); check(r.status === 200 && (r.body as any).reps[0].lines.length === 1, 'content');
+  r = await call('GET', '/api/admin/overview', {}, tok); check(r.status === 403, 'student cannot admin');
+  const game = { repId: 'r', repName: 'Blancas', lineId: lines[0].id, lineEvent: 'E', lineWhite: 'W', lineBlack: 'B', userColor: 'w', botId: 'muralla', botName: 'Muralla', botElo: 2300, result: '1-0', termination: 'Jaque mate', timeControl: '600+5', sans: ['d4', 'Nf6'], clocks: [600000, 598000], linePlies: 2, lineErrors: 1 };
+  r = await call('POST', '/api/games', { player: 'Ána ', game }, tok); check(r.status === 200, 'save game');
+  const gid = (r.body as any).game.id;
+  r = await call('POST', '/api/games', { player: 'Luis', game: { ...game, result: '1/2-1/2' } }, tok); check(r.status === 200, 'save game 2');
+  r = await call('GET', '/api/games?player=ana', {}, tok); check((r.body as any).games.length === 1, 'own games by normalized name');
+  r = await call('GET', `/api/games/${gid}`, {}, tok); check((r.body as any).game.sans.length === 2, 'get full game');
+  r = await call('DELETE', `/api/games/${gid}?player=Luis`, {}, tok); check(r.status === 403, 'cannot delete others');
+  r = await call('GET', '/api/admin/overview', {}, admin);
+  const ow = (r.body as any).worlds[0];
+  check(ow.password === 'Peon2025' && ow.gameCount === 2 && ow.players.length === 2, 'overview stats');
+  check(ow.players.find((p: any) => p.name === 'Ána').points === 1, 'points');
+  r = await call('PATCH', `/api/admin/worlds/${wid}`, { password: 'NuevaClave' }, admin); check(r.status === 200, 'change pw');
+  r = await call('GET', '/api/content', {}, tok); check(r.status === 401 && (r.body as any).error === 'password_changed', 'old session invalid after pw change');
+  r = await call('POST', '/api/admin/enter', { world: wid }, admin); check(r.status === 200, 'admin enter');
+  r = await call('GET', '/api/content', {}, (r.body as any).token); check(r.status === 200, 'admin world token works');
+  for (let i = 0; i < 9; i++) await call('POST', '/api/admin/login', { password: 'x' }, undefined, '9.9.9.9');
+  r = await call('POST', '/api/admin/login', { password: 'Maestra-123' }, undefined, '9.9.9.9'); check(r.status === 429, 'rate limit admin');
+  r = await call('GET', '/api/content', {}, tok.slice(0, -2) + 'xx'); check(r.status === 401, 'tampered token');
+  r = await call('DELETE', `/api/admin/worlds/${wid}`, {}, admin); check(r.status === 200, 'delete world');
+  r = await call('GET', '/api/worlds'); check((r.body as any).worlds.length === 0, 'world gone');
+  console.log(`server tests: ${ok} ok, ${bad} failed`);
+  process.exit(bad ? 1 : 0);
+})();

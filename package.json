@@ -1,0 +1,30 @@
+{
+  "name": "traynsko",
+  "version": "0.2.0",
+  "description": "Entrenador de repertorio de ajedrez: repite tus líneas y juega la posición contra bots.",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs && esbuild dev/server.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.cjs && node .dev/server.cjs",
+    "typecheck": "tsc -p .",
+    "test": "esbuild tests/server.test.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.test.cjs && node .dev/server.test.cjs"
+  },
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "@fontsource/alegreya-sans": "5.2.6",
+    "@fontsource/cinzel": "5.2.6",
+    "@upstash/redis": "1.38.4",
+    "chess.js": "1.4.0",
+    "chessground": "9.2.1",
+    "preact": "10.29.8",
+    "stockfish": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "esbuild": "0.25.10",
+    "typescript": "5.9.3"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

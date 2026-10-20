@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.dev/
+src/generated/
+.vercel/
+.env*
+*.log
