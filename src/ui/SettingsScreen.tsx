@@ -7,8 +7,8 @@ import { Emblem } from './Emblem';
 
 const PRESETS: [number, number][] = [[3, 2], [5, 3], [10, 5], [15, 10], [25, 10], [45, 15], [90, 30]];
 const THEMES: { id: Settings['boardTheme']; label: string }[] = [
-  { id: 'nogal', label: 'Nogal' },
   { id: 'imperio', label: 'Imperio' },
+  { id: 'nogal', label: 'Nogal' },
   { id: 'torneo', label: 'Torneo' },
   { id: 'pizarra', label: 'Pizarra' },
 ];
@@ -44,7 +44,7 @@ export function SettingsScreen({ settings: s, onUpdate, world, name, asMaster, o
           <span class="eyebrow">{asMaster ? 'Estás como maestro en' : 'Estás en'}</span>
           <span class="wp-name">{world.name}</span>
         </div>
-        <button type="button" class="btn ghost" onClick={onLeave}>Cambiar de mundo</button>
+        <button type="button" class="btn ghost" onClick={onLeave}>Cambiar de repertorio</button>
       </section>
 
       <section class="panel settings">

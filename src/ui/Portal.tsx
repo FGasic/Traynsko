@@ -42,8 +42,8 @@ export function Portal({ notice, preselect, onEnter, onMaster, hasMaster }: Prop
 
       <section class="portal-hero">
         <span class="rule" aria-hidden="true" />
-        <h1>Elige tu mundo</h1>
-        <p>Cada mundo guarda un repertorio. Entra con la clave que te dio tu entrenador.</p>
+        <h1>Elige tu repertorio</h1>
+        <p>Entra con la clave que te dio tu entrenador.</p>
       </section>
 
       {notice && !chosen && <p class="notice gold portal-notice">{notice}</p>}
@@ -58,9 +58,9 @@ export function Portal({ notice, preselect, onEnter, onMaster, hasMaster }: Prop
 
       {worlds && worlds.length === 0 && (
         <div class="empty portal-empty">
-          <h2>Aún no hay mundos</h2>
-          <p>{hasMaster ? 'Crea el primero desde la Sala del maestro.' : 'Tu entrenador está preparando los primeros mundos.'}</p>
-          <button type="button" class="btn primary" onClick={onMaster}><span class="star">★</span>Sala del maestro</button>
+          <h2>Aún no hay repertorios</h2>
+          <p>{hasMaster ? 'Crea el primero desde la Sala del maestro.' : 'Tu entrenador está preparando los primeros repertorios.'}</p>
+          {hasMaster && <button type="button" class="btn primary" onClick={onMaster}><span class="star">★</span>Sala del maestro</button>}
         </div>
       )}
 
@@ -73,7 +73,7 @@ export function Portal({ notice, preselect, onEnter, onMaster, hasMaster }: Prop
                 <span class="wc-text">
                   <span class="wc-name">{w.name}</span>
                   {w.subtitle && <span class="wc-sub">{w.subtitle}</span>}
-                  <span class="wc-meta">{w.lineCount} {w.lineCount === 1 ? 'línea' : 'líneas'} · {w.repCount} {w.repCount === 1 ? 'repertorio' : 'repertorios'}</span>
+                  <span class="wc-meta">{w.lineCount} {w.lineCount === 1 ? 'línea' : 'líneas'} · {w.repCount} {w.repCount === 1 ? 'capítulo' : 'capítulos'}</span>
                   <span class="wc-enter">Entrar</span>
                 </span>
               </button>
@@ -102,14 +102,14 @@ function EnterSheet({ world, message, onClose, onEnter }: { world: PublicWorld; 
   async function submit(e: Event) {
     e.preventDefault();
     if (!name.trim()) { setErr('Escribe tu nombre: así encontrarás tus partidas en cualquier dispositivo.'); nameRef.current?.focus(); return; }
-    if (!password.trim()) { setErr('Escribe la clave del mundo.'); pwRef.current?.focus(); return; }
+    if (!password.trim()) { setErr('Escribe la clave del repertorio.'); pwRef.current?.focus(); return; }
     setBusy(true); setErr(null);
     try {
       const r = await api.enter(world.id, password);
       prefs.saveLastName(name.trim());
       onEnter(r.token, r.world, name.trim());
     } catch (e: any) {
-      setErr(e.code === 'wrong_password' ? 'Esa clave no abre este mundo. Revísala y vuelve a probar.' : e.message);
+      setErr(e.code === 'wrong_password' ? 'Esa clave no abre este repertorio. Revísala y vuelve a probar.' : e.message);
       setBusy(false);
       pwRef.current?.select();
     }
@@ -129,7 +129,7 @@ function EnterSheet({ world, message, onClose, onEnter }: { world: PublicWorld; 
           {message && <p class="notice gold">{message}</p>}
           <label class="field-label" for="gate-name">Tu nombre</label>
           <input id="gate-name" ref={nameRef} class="input" value={name} maxLength={40} autoComplete="name" placeholder="Nombre y apellido" onInput={(e) => setName((e.target as HTMLInputElement).value)} />
-          <label class="field-label" for="gate-pass">Clave del mundo</label>
+          <label class="field-label" for="gate-pass">Clave del repertorio</label>
           <div class="pass-row">
             <input id="gate-pass" ref={pwRef} class="input" type={show ? 'text' : 'password'} value={password} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellcheck={false} onInput={(e) => setPassword((e.target as HTMLInputElement).value)} />
             <button type="button" class="btn ghost small" onClick={() => setShow(!show)}>{show ? 'Ocultar' : 'Ver'}</button>

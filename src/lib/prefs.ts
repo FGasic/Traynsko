@@ -3,6 +3,7 @@ import { BOTS } from './bots';
 import type { PublicWorld } from '../../shared/types';
 
 export interface Settings {
+  v: number;
   baseMin: number;
   incSec: number;
   startMode: 'start' | 'fixed' | 'random';
@@ -10,7 +11,6 @@ export interface Settings {
   randomMax: number;
   elo: number;
   botMoveSec: number;
-  revealBot: 'end' | 'start';
   enabledBots: string[];
   boardTheme: 'nogal' | 'torneo' | 'pizarra' | 'imperio';
   sound: boolean;
@@ -21,6 +21,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  v: 2,
   baseMin: 10,
   incSec: 5,
   startMode: 'start',
@@ -28,9 +29,8 @@ export const DEFAULT_SETTINGS: Settings = {
   randomMax: 12,
   elo: 2300,
   botMoveSec: 3,
-  revealBot: 'end',
   enabledBots: BOTS.filter((b) => b.id !== 'maquina').map((b) => b.id),
-  boardTheme: 'nogal',
+  boardTheme: 'imperio',
   sound: true,
   coords: true,
   disabledReps: {},
@@ -47,7 +47,13 @@ function put(k: string, v: unknown) {
 }
 
 export const prefs = {
-  settings: (): Settings => ({ ...DEFAULT_SETTINGS, ...get<Partial<Settings>>('settings', {}) }),
+  settings: (): Settings => {
+    const stored = get<Partial<Settings> & { revealBot?: unknown }>('settings', {});
+    delete stored.revealBot;
+    // v2: the Imperio board becomes the default for everyone
+    if (!stored.v || stored.v < 2) { stored.boardTheme = 'imperio'; stored.v = 2; }
+    return { ...DEFAULT_SETTINGS, ...stored };
+  },
   saveSettings: (s: Settings) => put('settings', s),
   session: () => get<WorldSession | null>('session', null),
   saveSession: (s: WorldSession | null) => put('session', s),

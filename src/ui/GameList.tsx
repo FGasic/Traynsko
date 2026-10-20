@@ -28,7 +28,7 @@ export function GameList({ games, onOpen, showPlayer = false, empty }: { games: 
   return (
     <div class="game-list-wrap">
       {reps.length > 1 && (
-        <div class="chips" role="radiogroup" aria-label="Filtrar por repertorio">
+        <div class="chips" role="radiogroup" aria-label="Filtrar por capítulo">
           <button type="button" role="radio" aria-checked={!rep} class={`chip ${!rep ? 'active' : ''}`} onClick={() => setRep('')}>Todos</button>
           {reps.map(([id, name]) => (
             <button type="button" role="radio" aria-checked={rep === id} class={`chip ${rep === id ? 'active' : ''}`} onClick={() => setRep(id)}>{name}</button>

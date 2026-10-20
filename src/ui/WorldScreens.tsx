@@ -76,7 +76,7 @@ export function MyGamesScreen({ token, player, boardTheme, refreshKey, toast, on
   );
 }
 
-/* ---------------- Repertorio: what this world trains ---------------- */
+/* ---------------- Capítulos: the PGN files of this repertoire ---------------- */
 
 export function RepertoireScreen({ reps, disabled, onToggle, isMaster, onOpenMaster }: {
   reps: Repertoire[]; disabled: string[]; onToggle(id: string, on: boolean): void; isMaster: boolean; onOpenMaster(): void;
@@ -88,14 +88,14 @@ export function RepertoireScreen({ reps, disabled, onToggle, isMaster, onOpenMas
     <div class="page-inner">
       <header class="page-head">
         <div>
-          <span class="eyebrow">Este mundo</span>
-          <h1>Repertorio</h1>
-          <p class="lede">Cada sesión elige al azar una línea de los repertorios activos. Desactiva los que no quieras repasar ahora.</p>
+          <span class="eyebrow">Este repertorio</span>
+          <h1>Capítulos</h1>
+          <p class="lede">Cada sesión elige al azar una línea de los capítulos activos. Desactiva los que no quieras repasar ahora.</p>
         </div>
         {isMaster && <button type="button" class="btn ghost" onClick={onOpenMaster}><span class="star">★</span>Gestionar en la Sala</button>}
       </header>
       {reps.length === 0 ? (
-        <div class="empty"><h2>Aún no hay repertorios</h2><p>{isMaster ? 'Sube un PGN desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido líneas a este mundo.'}</p></div>
+        <div class="empty"><h2>Aún no hay capítulos</h2><p>{isMaster ? 'Sube un PGN desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido líneas a este repertorio.'}</p></div>
       ) : (
         <>
           <p class="summary"><strong>{active.length}</strong> de {reps.length} activos · <strong>{lines}</strong> líneas en juego</p>

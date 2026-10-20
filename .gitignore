@@ -5,3 +5,4 @@ src/generated/
 .vercel/
 .env*
 *.log
+__pycache__/

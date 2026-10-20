@@ -1,4 +1,4 @@
-import { BotAvatar, Segmented, Toggle } from './parts';
+import { BotAvatar, Toggle } from './parts';
 import { BOTS } from '../lib/bots';
 import type { Settings } from '../lib/prefs';
 
@@ -34,10 +34,6 @@ export function BotsScreen({ settings, onUpdate }: { settings: Settings; onUpdat
             <output class="range-out" for="bot-time">{settings.botMoveSec} s</output>
           </div>
           <p class="help">Varía ±20 % para que no parezca un metrónomo. Con poco tiempo en su reloj, juega más rápido.</p>
-        </div>
-        <div class="control">
-          <span class="field-label">Mostrar qué bot te tocó</span>
-          <Segmented id="bot-reveal" value={settings.revealBot} options={[{ value: 'end', label: 'Al terminar la partida' }, { value: 'start', label: 'Al acabar la línea' }]} onChange={(v) => onUpdate({ revealBot: v })} />
         </div>
       </section>
 

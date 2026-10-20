@@ -16,7 +16,7 @@ import type { PublicWorld, Repertoire } from '../../shared/types';
 type Tab = 'train' | 'reps' | 'bots' | 'games' | 'settings';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'train', label: 'Entrenar', icon: 'train' },
-  { id: 'reps', label: 'Repertorio', icon: 'book' },
+  { id: 'reps', label: 'Capítulos', icon: 'book' },
   { id: 'bots', label: 'Bots', icon: 'bot' },
   { id: 'games', label: 'Partidas', icon: 'archive' },
   { id: 'settings', label: 'Ajustes', icon: 'sliders' },
@@ -75,7 +75,7 @@ export function App() {
     if (!(e instanceof ApiError) || e.status !== 401) return false;
     if (e.code === 'admin_expired') { prefs.saveAdminToken(null); setAdminToken(null); setView(session ? 'world' : 'portal'); toast(e.message, 'bad'); return true; }
     const wid = session?.world.id;
-    leaveWorld(e.code === 'password_changed' ? `La clave de «${session?.world.name ?? 'este mundo'}» cambió. Escribe la nueva para seguir.` : e.message, e.code === 'password_changed' ? wid : undefined);
+    leaveWorld(e.code === 'password_changed' ? `La clave de «${session?.world.name ?? 'este repertorio'}» cambió. Escribe la nueva para seguir.` : e.message, e.code === 'password_changed' ? wid : undefined);
     return true;
   }
 
@@ -117,7 +117,7 @@ export function App() {
   }
 
   async function saveGame(g: NewGame): Promise<SaveResult> {
-    if (!session) return { ok: false, message: 'Entra a un mundo para guardar.' };
+    if (!session) return { ok: false, message: 'Entra a un repertorio para guardar.' };
     try {
       await api.saveGame(session.token, session.name, g);
       setGamesKey((k) => k + 1);
@@ -173,8 +173,9 @@ export function App() {
             </nav>
           </header>
           <main class="content">
-            <div class="screen" hidden={tab !== 'train'}>
+            <div class={`screen train-layer ${tab === 'train' ? '' : 'is-hidden'}`} aria-hidden={tab !== 'train'}>
               <TrainScreen
+                active={tab === 'train'}
                 settings={settings}
                 reps={reps0}
                 disabled={disabled}

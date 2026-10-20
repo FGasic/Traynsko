@@ -84,7 +84,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
 
   async function loadWorld(kv: KV, id: string): Promise<WorldDoc> {
     const w = await kv.get<WorldDoc>(K.world(id));
-    if (!w) fail(404, 'world_not_found', 'Ese mundo ya no existe.');
+    if (!w) fail(404, 'world_not_found', 'Ese repertorio ya no existe.');
     return w!;
   }
 
@@ -92,14 +92,14 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
     if (!keys) fail(503, 'not_configured', 'Falta configurar la clave maestra en el servidor.');
     const raw = (req.auth ?? '').replace(/^Bearer\s+/i, '');
     const s = raw ? readToken<Session>(raw, keys!.sign) : null;
-    if (!s) fail(401, 'no_session', 'Entra de nuevo a tu mundo.');
+    if (!s) fail(401, 'no_session', 'Entra de nuevo a tu repertorio.');
     if (s!.k === 'a') {
       if (s!.exp < Date.now()) fail(401, 'admin_expired', 'Tu acceso maestro caducó. Escribe la clave maestra otra vez.');
       return { role: 'admin' };
     }
     const w = await kv.get<WorldDoc>(K.world(s!.w));
-    if (!w || !w.active) fail(401, 'world_closed', 'Este mundo ya no está disponible.');
-    if (w!.pwv !== s!.v) fail(401, 'password_changed', 'La clave de este mundo cambió. Escribe la nueva para seguir.');
+    if (!w || !w.active) fail(401, 'world_closed', 'Este repertorio ya no está disponible.');
+    if (w!.pwv !== s!.v) fail(401, 'password_changed', 'La clave de este repertorio cambió. Escribe la nueva para seguir.');
     return { role: 'world', world: w! };
   }
 
@@ -115,8 +115,8 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
   }
 
   function validLines(lines: unknown): Line[] {
-    if (!Array.isArray(lines) || lines.length === 0) fail(400, 'invalid', 'El repertorio no tiene líneas.');
-    if ((lines as unknown[]).length > 3000) fail(400, 'invalid', 'Máximo 3000 líneas por repertorio.');
+    if (!Array.isArray(lines) || lines.length === 0) fail(400, 'invalid', 'El capítulo no tiene líneas.');
+    if ((lines as unknown[]).length > 3000) fail(400, 'invalid', 'Máximo 3000 líneas por capítulo.');
     return (lines as any[]).map((l, i) => {
       const uci = str(l?.uci, 4000, `la línea ${i + 1}`);
       if (!UCI_LINE.test(uci)) fail(400, 'invalid', `La línea ${i + 1} tiene jugadas no válidas.`);
@@ -205,8 +205,8 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
     if (a === 'enter' && M === 'POST') {
       if (!keys) fail(503, 'not_configured', 'Falta configurar la clave maestra en el servidor.');
       await limit(kv, 'enter', req.ip, 20, 600);
-      const w = await loadWorld(kv, str(req.body?.world, 40, 'mundo'));
-      if (!w.active) fail(404, 'world_not_found', 'Ese mundo no está disponible.');
+      const w = await loadWorld(kv, str(req.body?.world, 40, 'repertorio'));
+      if (!w.active) fail(404, 'world_not_found', 'Ese repertorio no está disponible.');
       const given = normPassword(str(req.body?.password, 200, 'la clave'));
       const real = decrypt(w.pw, keys!.enc);
       if (real === null || !sameText(given, normPassword(real))) fail(401, 'wrong_password', 'Clave incorrecta.');
@@ -231,7 +231,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
 
     if (a === 'content' && M === 'GET') {
       const s = await auth(kv, req);
-      if (s.role !== 'world') fail(400, 'invalid', 'Entra a un mundo.');
+      if (s.role !== 'world') fail(400, 'invalid', 'Entra a un repertorio.');
       const w = (s as { world: WorldDoc }).world;
       const docs = await kv.mget<{ lines: Line[] }>(w.reps.map((r) => K.rep(r.id)));
       const reps = w.reps.map((r, i) => ({ ...r, lines: docs[i]?.lines ?? [] }));
@@ -240,7 +240,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
 
     if (a === 'games' && !b && M === 'POST') {
       const s = await auth(kv, req);
-      if (s.role !== 'world') fail(400, 'invalid', 'Entra a un mundo.');
+      if (s.role !== 'world') fail(400, 'invalid', 'Entra a un repertorio.');
       const w = (s as { world: WorldDoc }).world;
       await limit(kv, 'save', req.ip, 120, 3600);
       const name = str(req.body?.player, 40, 'tu nombre');
@@ -260,7 +260,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
         const name = str(req.query.get('player'), 40, 'tu nombre');
         return { status: 200, body: { games: await listGames(kv, s.world.id, playerKey(name)) } };
       }
-      const world = str(req.query.get('world'), 40, 'mundo');
+      const world = str(req.query.get('world'), 40, 'repertorio');
       const player = req.query.get('player');
       return { status: 200, body: { games: await listGames(kv, world, player ? playerKey(player) : undefined) } };
     }
@@ -299,7 +299,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       }
 
       if (b === 'enter' && M === 'POST') {
-        const w = await loadWorld(kv, str(req.body?.world, 40, 'mundo'));
+        const w = await loadWorld(kv, str(req.body?.world, 40, 'repertorio'));
         const token = signToken({ k: 'w', w: w.id, v: w.pwv, iat: Date.now() }, keys!.sign);
         return { status: 200, body: { token, world: toPublic(w) } };
       }
@@ -357,7 +357,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
 
       if (b === 'worlds' && c && d === 'reps' && M === 'POST') {
         const w = await loadWorld(kv, c);
-        if (w.reps.length >= 40) fail(400, 'invalid', 'Máximo 40 repertorios por mundo.');
+        if (w.reps.length >= 40) fail(400, 'invalid', 'Máximo 40 capítulos por repertorio.');
         const lines = validLines(req.body?.lines);
         const meta: RepMeta = { id: newId(), name: str(req.body?.name, 80, 'el nombre'), color: req.body?.color === 'b' ? 'b' : 'w', lineCount: lines.length };
         await kv.set(K.rep(meta.id), { lines });
@@ -369,7 +369,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       if (b === 'worlds' && c && d === 'reps' && parts[4] && (M === 'PATCH' || M === 'DELETE')) {
         const w = await loadWorld(kv, c);
         const rep = w.reps.find((r) => r.id === parts[4]);
-        if (!rep) fail(404, 'rep_not_found', 'Ese repertorio ya no existe.');
+        if (!rep) fail(404, 'rep_not_found', 'Ese capítulo ya no existe.');
         if (M === 'DELETE') {
           w.reps = w.reps.filter((r) => r.id !== rep!.id);
           await kv.del(K.rep(rep!.id));

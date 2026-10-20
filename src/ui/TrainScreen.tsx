@@ -16,6 +16,7 @@ import { sound } from '../lib/sound';
 export interface SaveResult { ok: boolean; message: string }
 
 interface Props {
+  active: boolean;
   settings: Settings;
   reps: Repertoire[];
   disabled: string[];
@@ -134,7 +135,7 @@ export function TrainScreen(p: Props) {
         phase() {
           sound.phase();
           const b = meta.current?.bot;
-          setBanner(settings.revealBot === 'start' && b ? `Línea completada. Ahora juegas contra ${b.name}.` : 'Línea completada. Ahora juegas contra el bot.');
+          setBanner(b ? `Línea completada. Ahora juegas contra ${b.name}.` : 'Línea completada. Ahora juegas contra el bot.');
           setTimeout(() => setBanner(null), 3200);
         },
         end() {
@@ -163,9 +164,11 @@ export function TrainScreen(p: Props) {
     // Only replace a session nobody has touched yet; never one in progress or one waiting to be saved.
     const fresh = !se || (se.phase !== 'over' && !se.played.some((m) => m.by === 'user'));
     if (fresh) newSession();
-  }, [p.linesLoaded, pool, settings.baseMin, settings.incSec, settings.startMode, settings.startMove, settings.randomMax, settings.elo, settings.botMoveSec, settings.enabledBots.join(','), settings.revealBot]);
+  }, [p.linesLoaded, pool, settings.baseMin, settings.incSec, settings.startMode, settings.startMove, settings.randomMax, settings.elo, settings.botMoveSec, settings.enabledBots.join(',')]);
 
   useEffect(() => () => { sess.current?.destroy(); try { wake.current?.release?.(); } catch { /* ignore */ } }, []);
+  // read-only hook for automated board checks
+  useEffect(() => { (window as any).__traynskoFen = () => sess.current?.chess.fen() ?? null; }, []);
 
   // clock tick
   useEffect(() => {
@@ -247,7 +250,7 @@ export function TrainScreen(p: Props) {
   /* ---------- render helpers ---------- */
   const m = meta.current;
   const phase = s?.phase ?? 'line';
-  const revealed = !!m && (phase === 'over' || (phase === 'bot' && settings.revealBot === 'start'));
+  const revealed = !!m && (phase === 'over' || phase === 'bot');
   const oppColor = userColor === 'w' ? 'b' : 'w';
 
   const rows = useMemo(() => buildRows(s?.played ?? [], s?.startFen, s?.linePlies ?? 0), [s?.played.length, s, s?.linePlies]);
@@ -265,7 +268,7 @@ export function TrainScreen(p: Props) {
         <PlayerStrip
           top
           name={revealed && m ? m.bot.name : 'Rival'}
-          caption={revealed && m ? `${m.bot.styleLabel} · ≈${settings.elo}` : settings.revealBot === 'end' ? 'Se revela al terminar' : 'Se revela tras la línea'}
+          caption={revealed && m ? `${m.bot.styleLabel} · ≈${settings.elo}` : 'Aparece al terminar tu línea'}
           avatar={<BotAvatar bot={m?.bot} hidden={!revealed} size={36} />}
           side={oppColor}
           session={s}
@@ -276,6 +279,7 @@ export function TrainScreen(p: Props) {
             theme={settings.boardTheme}
             coords={settings.coords}
             flash={flash}
+            active={p.active}
             onReady={(api) => { cg.current = api; sync(); }}
             config={{ movable: { free: false, events: { after: onUserMove } }, premovable: { enabled: false, events: {} } }}
           />
@@ -297,13 +301,13 @@ export function TrainScreen(p: Props) {
           {!s && pool.length === 0 && (
             <div class="board-empty">
               <div class="empty-card">
-                <span class="eyebrow">{p.reps.length ? 'Nada seleccionado' : 'Mundo en preparación'}</span>
-                <h2>{p.reps.length ? 'Activa algún repertorio' : 'Aún no hay líneas aquí'}</h2>
+                <span class="eyebrow">{p.reps.length ? 'Nada seleccionado' : 'Repertorio en preparación'}</span>
+                <h2>{p.reps.length ? 'Activa algún capítulo' : 'Aún no hay líneas aquí'}</h2>
                 <p>{p.reps.length
-                  ? 'Todos los repertorios de este mundo están desactivados. Activa al menos uno en la pestaña Repertorio.'
-                  : p.isMaster ? 'Sube el primer PGN de este mundo desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido repertorios a este mundo. Vuelve a intentarlo más tarde.'}</p>
+                  ? 'Todos los capítulos de este repertorio están desactivados. Activa al menos uno en la pestaña Capítulos.'
+                  : p.isMaster ? 'Sube el primer PGN de este repertorio desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido líneas a este repertorio. Vuelve a intentarlo más tarde.'}</p>
                 <div class="empty-actions">
-                  {p.reps.length > 0 && <button type="button" class="btn primary" onClick={() => p.goTo('reps')}>Ir a Repertorio</button>}
+                  {p.reps.length > 0 && <button type="button" class="btn primary" onClick={() => p.goTo('reps')}>Ir a Capítulos</button>}
                   {!p.reps.length && p.isMaster && <button type="button" class="btn primary" onClick={p.onOpenMaster}>Abrir la Sala del maestro</button>}
                 </div>
               </div>

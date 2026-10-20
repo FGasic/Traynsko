@@ -44,7 +44,7 @@ export function AdminRoom(p: Props) {
     <div class="room">
       <header class="room-top">
         <button type="button" class="btn ghost small" onClick={sel ? () => setSel(null) : p.onExit}>
-          <span class="back">‹</span>{sel ? 'Todos los mundos' : 'Salir de la Sala'}
+          <span class="back">‹</span>{sel ? 'Todos los repertorios' : 'Salir de la Sala'}
         </button>
         <div class="room-title"><span class="star">★</span><span>Sala del maestro</span></div>
         <button type="button" class="btn ghost small" onClick={p.onLogout}>Cerrar sesión</button>
@@ -58,14 +58,14 @@ export function AdminRoom(p: Props) {
           <>
             <header class="page-head">
               <div>
-                <span class="eyebrow">Tus mundos</span>
-                <h1>Mundos</h1>
-                <p class="lede">Crea un mundo por tema, dale una clave y repártela. Si cambias la clave, quien entró con la anterior queda fuera al instante.</p>
+                <span class="eyebrow">Tus repertorios</span>
+                <h1>Repertorios</h1>
+                <p class="lede">Crea un repertorio por tema, dale una clave y repártela. Si cambias la clave, quien entró con la anterior queda fuera al instante.</p>
               </div>
-              <button type="button" class="btn primary" onClick={() => setCreating(true)}>+ Nuevo mundo</button>
+              <button type="button" class="btn primary" onClick={() => setCreating(true)}>+ Nuevo repertorio</button>
             </header>
             {worlds.length === 0 && (
-              <div class="empty"><h2>Todavía no hay mundos</h2><p>Crea el primero: por ejemplo «Benko» o «Mesa 1», con la clave que darás a tus alumnos.</p></div>
+              <div class="empty"><h2>Todavía no hay repertorios</h2><p>Crea el primero: por ejemplo «Benko» o «Mesa 1», con la clave que darás a tus alumnos.</p></div>
             )}
             <ul class="admin-worlds">
               {worlds.map((w, i) => (
@@ -147,7 +147,7 @@ function WorldEditor({ world, token, boardTheme, toast, guard, onPlay, onAuthFai
           <h1>{name || 'Sin nombre'}</h1>
           {subtitle && <p class="lede">{subtitle}</p>}
         </div>
-        <button type="button" class="btn primary" onClick={play}>Jugar en este mundo</button>
+        <button type="button" class="btn primary" onClick={play}>Jugar en este repertorio</button>
       </header>
 
       {/* Access */}
@@ -173,7 +173,7 @@ function WorldEditor({ world, token, boardTheme, toast, guard, onPlay, onAuthFai
         <p class="help">Al cambiar la clave, todos los que estén dentro con la anterior quedan fuera en su siguiente acción. Ideal para cerrar una semana de prueba.</p>
         <div class="toggle-row">
           <span>Visible en la portada</span>
-          <Toggle id="world-active" checked={world.active} label="Visible en la portada" onChange={(v) => guard(() => api.admin.updateWorld(token, world.id, { active: v }), v ? 'Mundo visible.' : 'Mundo oculto: nadie puede entrar.')} />
+          <Toggle id="world-active" checked={world.active} label="Visible en la portada" onChange={(v) => guard(() => api.admin.updateWorld(token, world.id, { active: v }), v ? 'Repertorio visible.' : 'Repertorio oculto: nadie puede entrar.')} />
         </div>
       </section>
 
@@ -243,16 +243,16 @@ function WorldEditor({ world, token, boardTheme, toast, guard, onPlay, onAuthFai
 
       {/* Danger */}
       <section class="panel danger-zone">
-        <h2 class="section-title">Eliminar mundo</h2>
+        <h2 class="section-title">Eliminar repertorio</h2>
         {!confirmDel ? (
           <div class="row-actions">
-            <p class="help">Borra el mundo, sus repertorios y sus {world.gameCount} partidas. No se puede deshacer.</p>
+            <p class="help">Borra el repertorio, sus capítulos y sus {world.gameCount} partidas. No se puede deshacer.</p>
             <button type="button" class="btn ghost small danger-text" onClick={() => setConfirmDel(true)}>Eliminar «{world.name}»</button>
           </div>
         ) : (
           <div class="confirm">
             <span>¿Eliminar «{world.name}» y todo su contenido?</span>
-            <button type="button" class="btn danger small" onClick={async () => { if (await guard(() => api.admin.deleteWorld(token, world.id), 'Mundo eliminado.')) onDeleted(); }}>Eliminar definitivamente</button>
+            <button type="button" class="btn danger small" onClick={async () => { if (await guard(() => api.admin.deleteWorld(token, world.id), 'Repertorio eliminado.')) onDeleted(); }}>Eliminar definitivamente</button>
             <button type="button" class="btn ghost small" onClick={() => setConfirmDel(false)}>Cancelar</button>
           </div>
         )}
@@ -304,7 +304,7 @@ function CreateWorld({ onClose, onCreate }: { onClose(): void; onCreate(w: { nam
       <form class="sheet gate wide" onSubmit={async (e) => { e.preventDefault(); if (!ok) return; setBusy(true); await onCreate({ name: name.trim(), subtitle: subtitle.trim(), password: password.trim(), emblem, hue }); setBusy(false); }}>
         <div class="gate-head" style={{ '--h': hue } as any}>
           <Emblem emblem={emblem} hue={hue} size={58} />
-          <div><span class="eyebrow">Nuevo mundo</span><h2>{name || 'Sin nombre'}</h2></div>
+          <div><span class="eyebrow">Nuevo repertorio</span><h2>{name || 'Sin nombre'}</h2></div>
         </div>
         <div class="gate-body">
           <label class="field-label" for="c-name">Nombre</label>
@@ -317,7 +317,7 @@ function CreateWorld({ onClose, onCreate }: { onClose(): void; onCreate(w: { nam
         </div>
         <div class="sheet-foot">
           <button type="button" class="btn ghost" onClick={onClose}>Cancelar</button>
-          <button type="submit" class="btn primary" disabled={!ok || busy}>{busy ? 'Creando…' : 'Crear mundo'}</button>
+          <button type="submit" class="btn primary" disabled={!ok || busy}>{busy ? 'Creando…' : 'Crear repertorio'}</button>
         </div>
       </form>
     </div>
@@ -347,7 +347,7 @@ function RepertoireAdmin({ world, token, guard, toast }: { world: AdminWorld; to
       onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
       onDrop={(e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer?.files?.[0]; if (f) readFile(f); }}>
       <div class="panel-head">
-        <h2 class="section-title">Repertorios</h2>
+        <h2 class="section-title">Capítulos</h2>
         <div class="row-actions">
           <button type="button" class="btn primary small" onClick={() => file.current?.click()}><Icon name="upload" size={16} />Subir PGN</button>
           <button type="button" class="btn ghost small" onClick={() => setPaste('')}>Pegar texto</button>
@@ -361,7 +361,7 @@ function RepertoireAdmin({ world, token, guard, toast }: { world: AdminWorld; to
           <label class="field-label" for="rep-paste">Contenido del PGN</label>
           <textarea id="rep-paste" class="textarea" rows={7} value={paste} onInput={(e) => setPaste((e.target as HTMLTextAreaElement).value)} />
           <div class="row-actions">
-            <button type="button" class="btn primary small" disabled={!paste.trim()} onClick={() => prepare(paste, 'Repertorio')}>Analizar</button>
+            <button type="button" class="btn primary small" disabled={!paste.trim()} onClick={() => prepare(paste, 'Capítulo')}>Analizar</button>
             <button type="button" class="btn ghost small" onClick={() => setPaste(null)}>Cancelar</button>
           </div>
         </div>
@@ -369,7 +369,7 @@ function RepertoireAdmin({ world, token, guard, toast }: { world: AdminWorld; to
 
       {draft && (
         <div class="subpanel">
-          <div class="import-head"><span class="eyebrow">Nuevo repertorio</span><span class="import-count">{draft.report.lines.length} líneas</span></div>
+          <div class="import-head"><span class="eyebrow">Nuevo capítulo</span><span class="import-count">{draft.report.lines.length} líneas</span></div>
           <div class="two-col">
             <div>
               <label class="field-label" for="rep-name">Nombre</label>
@@ -415,12 +415,12 @@ function RepertoireAdmin({ world, token, guard, toast }: { world: AdminWorld; to
                   <span class="rep-meta">{r.color === 'w' ? 'Blancas' : 'Negras'} · {r.lineCount} líneas</span>
                 </div>
                 <button type="button" class="btn ghost small" onClick={() => guard(() => api.admin.updateRep(token, world.id, r.id, { color: r.color === 'w' ? 'b' : 'w' }), 'Color cambiado.')}>Cambiar a {r.color === 'w' ? 'negras' : 'blancas'}</button>
-                <button type="button" class="icon-btn" aria-label="Eliminar repertorio" onClick={() => setConfirm(r.id)}><Icon name="trash" size={18} /></button>
+                <button type="button" class="icon-btn" aria-label="Eliminar capítulo" onClick={() => setConfirm(r.id)}><Icon name="trash" size={18} /></button>
               </div>
               {confirm === r.id && (
                 <div class="confirm">
                   <span>¿Eliminar «{r.name}»? Las partidas guardadas se conservan.</span>
-                  <button type="button" class="btn danger small" onClick={() => { setConfirm(null); guard(() => api.admin.deleteRep(token, world.id, r.id), 'Repertorio eliminado.'); }}>Eliminar</button>
+                  <button type="button" class="btn danger small" onClick={() => { setConfirm(null); guard(() => api.admin.deleteRep(token, world.id, r.id), 'Capítulo eliminado.'); }}>Eliminar</button>
                   <button type="button" class="btn ghost small" onClick={() => setConfirm(null)}>Cancelar</button>
                 </div>
               )}
