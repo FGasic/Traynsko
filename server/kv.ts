@@ -51,8 +51,15 @@ export function memoryKV(): KV {
 }
 
 export async function redisKV(): Promise<KV> {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  // The Upstash integration may add a custom prefix (e.g. STORAGE_KV_REST_API_URL): accept any of them.
+  const env = process.env;
+  const find = (suffixes: string[]) => {
+    for (const sfx of suffixes) { if (env[sfx]) return env[sfx]; }
+    for (const sfx of suffixes) { const k = Object.keys(env).find((n) => n.endsWith('_' + sfx) && env[n]); if (k) return env[k]; }
+    return undefined;
+  };
+  const url = find(['KV_REST_API_URL', 'UPSTASH_REDIS_REST_URL']);
+  const token = find(['KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_TOKEN']);
   if (!url || !token) throw new Error('missing_database');
   const { Redis } = await import('@upstash/redis');
   const r = new Redis({ url, token, automaticDeserialization: true });
