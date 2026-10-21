@@ -1,15 +1,24 @@
 import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, PublicWorld, RepMeta, Repertoire } from '../../shared/types';
+import type { Medal, UserInfo } from '../../shared/atlas';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
 }
+
+/** Lichess account session: sent with every request while the player is signed in. */
+let userToken: string | null = null;
+export const setUserToken = (t: string | null) => { userToken = t; };
 
 async function call<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
   let res: Response;
   try {
     res = await fetch('/api/' + path, {
       method,
-      headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+      headers: {
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        ...(userToken ? { 'X-Traynsko-User': userToken } : {}),
+      },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -41,6 +50,16 @@ export const api = {
   myGames: (t: string, player: string) => call<{ games: GameSummary[] }>('GET', 'games' + q({ player }), undefined, t).then((r) => r.games),
   game: (t: string, id: string) => call<{ game: GameRecord }>('GET', 'games/' + id, undefined, t).then((r) => r.game),
   deleteMyGame: (t: string, id: string, player: string) => call('DELETE', 'games/' + id + q({ player }), undefined, t),
+
+  lichessLogin: (code: string, verifier: string, redirectUri: string) => call<{ token: string; user: UserInfo }>('POST', 'auth/lichess', { code, verifier, redirectUri }),
+  me: () => call<{ user: UserInfo; medals: number }>('GET', 'me'),
+  deleteAccount: () => call<{ ok: true; games: number }>('DELETE', 'me'),
+  logoutAll: () => call('POST', 'me/logout-all'),
+  claimPreview: (t: string, name: string) => call<{ games: number; claimed: 'you' | 'other' | null }>('GET', 'me/claim' + q({ name }), undefined, t),
+  claim: (t: string, name: string) => call<{ games: number }>('POST', 'me/claim', { name }, t),
+  medals: () => call<{ medals: Medal[] }>('GET', 'medals').then((r) => r.medals),
+  awardMedal: (t: string, m: { repId: string; lineId: string; startPly: number; errors: number; hints: number }) =>
+    call<{ medal: Medal; isNew: boolean }>('POST', 'medals', m, t),
 
   admin: {
     login: (password: string) => call<{ token: string }>('POST', 'admin/login', { password }).then((r) => r.token),

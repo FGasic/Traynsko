@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   const ip = String(req.headers['x-real-ip'] ?? req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || 'unknown';
-  const out = await app({ method: req.method ?? 'GET', path, query: url.searchParams, auth: req.headers.authorization, body: body ?? {}, ip });
+  const out = await app({ method: req.method ?? 'GET', path, query: url.searchParams, auth: req.headers.authorization, user: req.headers['x-traynsko-user'], body: body ?? {}, ip });
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.statusCode = out.status;

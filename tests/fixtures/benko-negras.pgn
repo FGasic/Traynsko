@@ -1,0 +1,20 @@
+[Event "Benko"]
+[White "Benko Principal 8.Rxf1"]
+[Black "Plan estándar ...d6"]
+[Result "*"]
+
+1. d4 Nf6 2. c4 c5 3. d5 b5 4. cxb5 a6 5. bxa6 g6 6. Nc3 Bxa6 7. e4 Bxf1 8. Kxf1 d6 *
+
+[Event "Benko"]
+[White "Benko 4.Cf3"]
+[Black "Rechazo con 4.Nf3"]
+[Result "*"]
+
+1. d4 Nf6 2. c4 c5 3. d5 b5 4. Nf3 g6 5. cxb5 a6 *
+
+[Event "Benko"]
+[White "Benko 5.e3"]
+[Black "Devolver el peón"]
+[Result "*"]
+
+1. d4 Nf6 2. c4 c5 3. d5 b5 4. cxb5 a6 5. e3 g6 6. Nc3 Bg7 *

@@ -37,6 +37,8 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export interface WorldSession { token: string; world: PublicWorld; name: string; asMaster?: boolean }
+/** Lichess account on this device (the token is signed by the Traynsko server, not a Lichess token). */
+export interface UserSession { token: string; id: string; name: string }
 
 const P = 'traynsko:';
 function get<T>(k: string, fallback: T): T {
@@ -59,6 +61,8 @@ export const prefs = {
   saveSession: (s: WorldSession | null) => put('session', s),
   adminToken: () => get<string | null>('admin', null),
   saveAdminToken: (t: string | null) => put('admin', t),
+  user: () => get<UserSession | null>('user', null),
+  saveUser: (u: UserSession | null) => put('user', u),
   lastName: () => get<string>('name', ''),
   saveLastName: (n: string) => put('name', n),
 };
