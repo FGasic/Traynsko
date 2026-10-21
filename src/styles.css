@@ -638,6 +638,11 @@ button.mv:hover { background: var(--gold-soft); }
 .mt-meta b { color: var(--gold); }
 .mt-stale { font-style: normal; color: var(--gold); font-weight: 700; letter-spacing: .04em; }
 
+/* draw offers */
+.half { font-family: var(--font-display); font-weight: 800; font-size: 17px; line-height: 1; }
+.draw-offer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.draw-offer .status-text { flex: 1 1 100%; min-width: 0; color: var(--gold-hi); font-weight: 600; }
+
 /* medal line in the end-of-game sheet */
 .medal-note { margin: 4px 14px 2px; padding: 10px 12px; border-radius: 4px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--hair-soft); background: rgba(4, 10, 22, 0.55); }
 .medal-note.new { border-color: var(--gold-mid); background: linear-gradient(90deg, rgba(220, 183, 94, 0.16), rgba(4, 10, 22, 0.55) 70%); box-shadow: 0 0 18px rgba(220, 183, 94, 0.12); }
@@ -721,6 +726,8 @@ button.mv:hover { background: var(--gold-soft); }
   }
   .side-col.confirming { grid-template-areas: "actions actions" "moves moves"; }
   .side-col.confirming .status-card { display: none; }
+  .side-col.offering { grid-template-areas: "status status" "moves moves"; }
+  .side-col.offering .actions { display: none; }
   .status-card { grid-area: status; }
   .actions { grid-area: actions; flex-wrap: nowrap; }
   .actions .btn { min-height: 44px; padding: 6px 12px; font-size: 12.5px; gap: 6px; }
@@ -787,6 +794,9 @@ button.mv:hover { background: var(--gold-soft); }
   .status-head .rep-name { display: none; }
   .status-text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
   .status-card.has-hint .status-text { display: none; }
+  .draw-offer { flex-wrap: nowrap; flex: 1; min-width: 0; gap: 6px; }
+  .draw-offer .status-text { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .draw-offer .btn { margin-left: 0; }
   .status-card .btn { flex: none; margin-left: auto; min-height: 34px; padding: 4px 10px; font-size: 12.5px; }
   .status-card .btn.block { width: auto; }
   .pill { font-size: 11.5px; padding: 4px 8px; }

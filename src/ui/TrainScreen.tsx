@@ -185,6 +185,11 @@ export function TrainScreen(p: Props) {
           wake.current = null;
         },
         engineError() { setEngineErr(true); },
+        draw(kind) {
+          const name = meta.current?.bot.name ?? 'El bot';
+          setBanner(kind === 'declined' ? `${name} rechaza las tablas.` : `${name} te ofrece tablas.`);
+          setTimeout(() => setBanner(null), 3000);
+        },
       },
     );
     sess.current = se;
@@ -426,7 +431,7 @@ export function TrainScreen(p: Props) {
         />
       </div>
 
-      <aside class={`side-col ${confirmResign && phase === 'bot' ? 'confirming' : ''}`}>
+      <aside class={`side-col ${confirmResign && phase === 'bot' ? 'confirming' : ''} ${phase === 'bot' && s?.drawOffer === 'bot' ? 'offering' : ''}`}>
         <section class={`status-card ${hintable ? 'has-hint' : ''}`}>
           <div class="status-head">
             {phase === 'line' && <span class="pill brass"><span class="lbl-long">I · Tu línea</span><span class="lbl-short">Línea</span></span>}
@@ -442,11 +447,20 @@ export function TrainScreen(p: Props) {
               {s.mistakes > 0 && <span class="err-count"> · {s.mistakes}<span class="lbl-long"> {s.mistakes === 1 ? 'error' : 'errores'}</span><span class="lbl-short"> ✗</span></span>}
             </p>
           )}
-          {phase === 'bot' && s && (
+          {phase === 'bot' && s && s.drawOffer !== 'bot' && (
             <p class="status-text">
-              {s.thinking ? <><span class="lbl-long">El bot está pensando…</span><span class="lbl-short">Pensando…</span></> : 'Tu turno.'}
+              {s.drawOffer === 'user'
+                ? <><span class="lbl-long">Tablas ofrecidas: responderá con su jugada.</span><span class="lbl-short">Tablas ofrecidas…</span></>
+                : s.thinking ? <><span class="lbl-long">El bot está pensando…</span><span class="lbl-short">Pensando…</span></> : 'Tu turno.'}
               {engineErr && <span class="err-count"> El motor no pudo cargarse en este dispositivo.</span>}
             </p>
+          )}
+          {phase === 'bot' && s?.drawOffer === 'bot' && (
+            <div class="draw-offer" role="group" aria-label="Oferta de tablas">
+              <span class="status-text"><span class="lbl-long">{m?.bot.name} te ofrece tablas.</span><span class="lbl-short">¿Tablas?</span></span>
+              <button type="button" class="btn primary small" onClick={() => sess.current?.acceptDraw()}>Aceptar</button>
+              <button type="button" class="btn ghost small" onClick={() => sess.current?.declineDraw()}>Seguir</button>
+            </div>
           )}
           {phase === 'over' && !sheetOpen && (
             <button type="button" class="btn primary block" onClick={() => setSheetOpen(true)}><span class="lbl-long">Ver resumen y guardar</span><span class="lbl-short">Resumen</span></button>
@@ -473,7 +487,10 @@ export function TrainScreen(p: Props) {
             <button type="button" class="btn ghost" onClick={newSession} disabled={pool.length === 0}><Icon name="skip" size={18} />Otra línea</button>
           )}
           {phase === 'bot' && !confirmResign && (
-            <button type="button" class="btn ghost" onClick={() => setConfirmResign(true)}><Icon name="flag" size={18} />Abandonar</button>
+            <>
+              <button type="button" class="btn ghost" onClick={() => sess.current?.offerDraw()} disabled={!s?.canOfferDraw} title="Ofrecer tablas" aria-label="Ofrecer tablas"><span class="half" aria-hidden="true">½</span><span class="lbl-long">Tablas</span></button>
+              <button type="button" class="btn ghost" onClick={() => setConfirmResign(true)}><Icon name="flag" size={18} />Abandonar</button>
+            </>
           )}
           {phase === 'bot' && confirmResign && (
             <div class="confirm">

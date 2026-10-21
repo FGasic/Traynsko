@@ -2,6 +2,11 @@
 
 Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el reloj en marcha y, al terminarla, juegas la posición contra un bot que corre en tu propio dispositivo (Stockfish). Cada partida queda en tu registro, con visor jugada a jugada.
 
+## Tablas contra el bot
+
+- Puedes ofrecer tablas en la partida. El bot acepta en finales simplificados o posiciones sin progreso si no está claramente mejor; al principio de una partida con piezas solo acepta si está peor.
+- El bot ofrece tablas cuando la posición lleva varias jugadas igualada y no pasa nada (final sin damas o diez jugadas sin capturas ni movimientos de peón). Mover sin responder equivale a seguir jugando.
+
 ## Cuentas y Atlas
 
 - **Entrar con Lichess** (OAuth2 + PKCE, sin registrar la app ni claves extra). El navegador obtiene el código; el servidor lo canjea, lee el nombre de usuario y revoca el token de inmediato. No se piden permisos: Traynsko solo conoce el nombre de usuario.
@@ -32,6 +37,12 @@ Cuentas y emblemas, con Lichess simulado (el código devuelto se toma como nombr
 ```bash
 DEV_FAKE_LICHESS=1 npm run dev
 python3 tests/e2e_accounts.py /tmp/qa
+```
+
+Tablas en un final de torres (con `npm run dev` y datos limpios):
+
+```bash
+python3 tests/e2e_draws.py /tmp/qa
 ```
 
 ## Estructura

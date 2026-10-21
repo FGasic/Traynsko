@@ -5,6 +5,7 @@ import { parseRepertoire } from '../src/lib/pgn';
 import { readFileSync } from 'node:fs';
 import { lineFingerprint } from '../shared/atlas';
 import { lichessClient } from '../server/lichess';
+import { botAcceptsDraw, botOffersDraw, position } from '../src/lib/draws';
 
 const kv = memoryKV();
 const fakeLichess = {
@@ -132,6 +133,23 @@ const login = (code: string, ip = '2.2.2.2') => call('POST', '/api/auth/lichess'
   const form = new URLSearchParams(sent[0].body);
   check(form.get('grant_type') === 'authorization_code' && form.get('code_verifier') === VERIFIER && form.get('client_id') === 'traynsko' && form.get('redirect_uri') === 'https://t.app/', 'token request form');
   check(sent[1].auth === 'Bearer lio_abc' && sent[2].method === 'DELETE', 'account read then token revoked');
+
+  /* ---------- draws ---------- */
+  const ROOKS = '8/5pk1/6p1/8/3R4/6P1/r4PK1/8 w - - 4 60';          // rook ending, equal
+  const MIDDLE = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R w KQ - 0 10';
+  const QUIET_MIDDLE = 'r1bq1rk1/pp2bppp/2n1pn2/3p4/3P4/2NBPN2/PP3PPP/R2QK2R w KQ - 24 30';
+  check(position(ROOKS).simplified && !position(MIDDLE).simplified && position(QUIET_MIDDLE).quiet, 'draw: position classes');
+  check(botAcceptsDraw({ fen: ROOKS, botEval: 20, freePlies: 40 }), 'draw: equal rook ending accepted');
+  check(botAcceptsDraw({ fen: ROOKS, botEval: 70, freePlies: 40 }), 'draw: slightly better rook ending accepted');
+  check(!botAcceptsDraw({ fen: ROOKS, botEval: 250, freePlies: 40 }), 'draw: winning ending refused');
+  check(!botAcceptsDraw({ fen: MIDDLE, botEval: 0, freePlies: 4 }), 'draw: early equal middlegame refused');
+  check(botAcceptsDraw({ fen: MIDDLE, botEval: -120, freePlies: 4 }), 'draw: bot worse accepts early');
+  check(botAcceptsDraw({ fen: MIDDLE, botEval: 10, freePlies: 40 }), 'draw: later equal middlegame accepted');
+  check(botOffersDraw({ fen: ROOKS, botEval: 5, freePlies: 30, equalStreak: 4, pliesSinceOffer: 999 }), 'draw: bot offers in dead rook ending');
+  check(!botOffersDraw({ fen: ROOKS, botEval: 5, freePlies: 30, equalStreak: 2, pliesSinceOffer: 999 }), 'draw: needs a streak');
+  check(!botOffersDraw({ fen: ROOKS, botEval: 5, freePlies: 30, equalStreak: 6, pliesSinceOffer: 8 }), 'draw: cooldown after an offer');
+  check(!botOffersDraw({ fen: MIDDLE, botEval: 0, freePlies: 10, equalStreak: 6, pliesSinceOffer: 999 }), 'draw: no offer in a live middlegame');
+  check(!botOffersDraw({ fen: ROOKS, botEval: 90, freePlies: 30, equalStreak: 6, pliesSinceOffer: 999 }), 'draw: no offer when not equal');
 
   console.log(`server tests: ${ok} ok, ${bad} failed`);
   process.exit(bad ? 1 : 0);
