@@ -15,6 +15,7 @@ export interface KV {
   zcard(key: string): Promise<number>;
   sadd(key: string, member: string): Promise<void>;
   smembers(key: string): Promise<string[]>;
+  srem(key: string, member: string): Promise<void>;
   /** increment and set the TTL on first increment; returns the new value */
   hit(key: string, ttlSec: number): Promise<number>;
 }
@@ -40,6 +41,7 @@ export function memoryKV(): KV {
     async zcard(k) { return zsets.get(k)?.size ?? 0; },
     async sadd(k, m) { if (!sets.has(k)) sets.set(k, new Set()); sets.get(k)!.add(m); },
     async smembers(k) { return [...(sets.get(k) ?? [])]; },
+    async srem(k, m) { sets.get(k)?.delete(m); },
     async hit(k, ttlSec) {
       alive(k);
       const n = ((data.get(k) as number) ?? 0) + 1;
@@ -74,6 +76,7 @@ export async function redisKV(): Promise<KV> {
     async zcard(k) { return await r.zcard(k); },
     async sadd(k, m) { await r.sadd(k, m); },
     async smembers(k) { return (await r.smembers(k)).map(String); },
+    async srem(k, m) { await r.srem(k, m); },
     async hit(k, ttlSec) {
       const n = await r.incr(k);
       if (n === 1) await r.expire(k, ttlSec);

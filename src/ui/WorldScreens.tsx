@@ -44,7 +44,7 @@ export function MyGamesScreen({ token, player, boardTheme, refreshKey, toast, on
         <div>
           <span class="eyebrow">Registro de {player}</span>
           <h1>Partidas</h1>
-          <p class="lede">Cada partida que guardas queda aquí, en cualquier dispositivo donde entres con tu nombre. Ábrela para repasarla jugada a jugada.</p>
+          <p class="lede">Cada partida que guardas queda aquí, en cualquier dispositivo donde entres con tu cuenta (o con el mismo nombre). Ábrela para repasarla jugada a jugada.</p>
         </div>
         {games && games.length > 0 && <button type="button" class="btn ghost" onClick={downloadAll}><Icon name="download" size={18} />Descargar todo</button>}
       </header>

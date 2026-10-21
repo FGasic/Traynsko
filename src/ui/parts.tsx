@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import type { Bot } from '../lib/bots';
 
-export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit';
+export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external';
 
 const PATHS: Record<IconName, string> = {
   train: 'M4 4h16v16H4z M4 12h16 M12 4v16 M4 4l8 8 M12 12l8 8',
@@ -23,6 +23,10 @@ const PATHS: Record<IconName, string> = {
   refresh: 'M20 11a8 8 0 1 0-2.3 5.7 M20 4v7h-7',
   chevron: 'M9 6l6 6-6 6',
   edit: 'M4 20h4L19 9l-4-4L4 16z M13 7l4 4',
+  medal: 'M12 3l7 2.6V11c0 4.6-3 8.2-7 10-4-1.8-7-5.4-7-10V5.6z M12 8l1.3 2.6 2.9.4-2.1 2 .5 2.9-2.6-1.4-2.6 1.4.5-2.9-2.1-2 2.9-.4z',
+  login: 'M14 4h5v16h-5 M9 8l4 4-4 4 M13 12H4',
+  logout: 'M10 4H5v16h5 M15 8l4 4-4 4 M19 12h-9',
+  external: 'M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6',
 };
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {

@@ -13,8 +13,20 @@ import type { NewGame } from '../lib/api';
 import { fmtClock } from '../lib/clock';
 import { sound } from '../lib/sound';
 import { useBoardFit } from '../lib/fit';
+import { lineFingerprint } from '../../shared/atlas';
+import { MedalBadge } from './Atlas';
 
 export interface SaveResult { ok: boolean; message: string }
+export interface AwardResult { isNew: boolean; count: number }
+
+/** What happened to the medal of the line just played. */
+type MedalState =
+  | { kind: 'none' }
+  | { kind: 'partial'; startMove: number }   // perfect, but started after move 1
+  | { kind: 'guest' }                         // perfect from move 1, no account
+  | { kind: 'pending' }
+  | { kind: 'earned'; isNew: boolean; count: number }
+  | { kind: 'error'; message: string };
 
 interface Props {
   active: boolean;
@@ -25,6 +37,9 @@ interface Props {
   engine: () => Engine;
   playerName: string;
   isMaster: boolean;
+  account: boolean;
+  medalFps: Set<string>;
+  onAwardMedal(rep: RepMeta, line: Line): Promise<AwardResult>;
   onSaveGame(g: NewGame): Promise<SaveResult>;
   onUpdateSettings(p: Partial<Settings>): void;
   onOpenMaster(): void;
@@ -46,6 +61,8 @@ function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length
 
 export function TrainScreen(p: Props) {
   const { settings } = p;
+  const pRef = useRef(p);
+  pRef.current = p;
   const cg = useRef<Api | null>(null);
   const sess = useRef<Session | null>(null);
   const meta = useRef<{ rep: RepMeta; line: Line; bot: Bot } | null>(null);
@@ -58,6 +75,8 @@ export function TrainScreen(p: Props) {
   const [confirmResign, setConfirmResign] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [engineErr, setEngineErr] = useState(false);
+  const [medal, setMedal] = useState<MedalState>({ kind: 'none' });
+  const medalDone = useRef(false);
   // The hint lives in a ref as well: board callbacks are created once and must always see the current value.
   const [hintMove, setHintState] = useState<string | null>(null);
   const hintRef = useRef<string | null>(null);
@@ -120,6 +139,8 @@ export function TrainScreen(p: Props) {
     setPromo(null);
     setHintMove(null);
     setBanner(null);
+    setMedal({ kind: 'none' });
+    medalDone.current = false;
     if (!pool.length) { meta.current = null; sync(); bump(); return; }
     const candidates = pool.length > 1 ? pool.filter((x) => x.line.id !== settings.lastLineId) : pool;
     const { rep, line } = pick(candidates);
@@ -151,16 +172,24 @@ export function TrainScreen(p: Props) {
         phase() {
           sound.phase();
           const b = meta.current?.bot;
-          setBanner(b ? `Línea completada. Ahora juegas contra ${b.name}.` : 'Línea completada. Ahora juegas contra el bot.');
-          setTimeout(() => setBanner(null), 3200);
+          const perfect = lineDone();
+          const head = perfect === 'new' ? 'Línea perfecta: emblema nuevo.' : perfect === 'again' ? 'Línea perfecta: emblema revalidado.' : 'Línea completada.';
+          setBanner(`${head} Ahora juegas contra ${b ? b.name : 'el bot'}.`);
+          setTimeout(() => setBanner(null), perfect ? 4200 : 3200);
         },
         end() {
+          if (sess.current && sess.current.lineIdx >= sess.current.lineMoves.length) lineDone();
           sound.end();
           setTimeout(() => setSheetOpen(true), 450);
           try { wake.current?.release?.(); } catch { /* ignore */ }
           wake.current = null;
         },
         engineError() { setEngineErr(true); },
+        draw(kind) {
+          const name = meta.current?.bot.name ?? 'El bot';
+          setBanner(kind === 'declined' ? `${name} rechaza las tablas.` : `${name} te ofrece tablas.`);
+          setTimeout(() => setBanner(null), 3000);
+        },
       },
     );
     sess.current = se;
@@ -199,6 +228,33 @@ export function TrainScreen(p: Props) {
     el.scrollLeft = el.scrollWidth;
     el.classList.toggle('overflowing', el.scrollWidth > el.clientWidth + 1);
   });
+
+  /* ---------- medals ---------- */
+  /** Called once when the repertoire line is finished. Returns whether a medal is being won or renewed. */
+  function lineDone(): 'new' | 'again' | null {
+    const se = sess.current, m = meta.current;
+    if (!se || !m || medalDone.current) return null;
+    medalDone.current = true;
+    if (se.mistakes > 0 || se.hints > 0) return null;
+    if (se.preplied > 0) { setMedal({ kind: 'partial', startMove: se.cfg.startMove }); return null; }
+    if (!pRef.current.account) { setMedal({ kind: 'guest' }); return null; }
+    const known = pRef.current.medalFps.has(lineFingerprint(m.rep.color, m.line));
+    award();
+    return known ? 'again' : 'new';
+  }
+
+  async function award() {
+    const m = meta.current;
+    if (!m) return;
+    const owner = sess.current;
+    setMedal({ kind: 'pending' });
+    try {
+      const r = await pRef.current.onAwardMedal(m.rep, m.line);
+      if (sess.current === owner) setMedal({ kind: 'earned', ...r });
+    } catch (e: any) {
+      if (sess.current === owner) setMedal({ kind: 'error', message: e?.message ?? 'No se pudo registrar el emblema.' });
+    }
+  }
 
   /* ---------- moves ---------- */
   function commit(uci: string) {
@@ -352,6 +408,10 @@ export function TrainScreen(p: Props) {
               hints={s.hints}
               userMoves={userMoves}
               linePlies={s.linePlies}
+              medal={medal}
+              color={userColor}
+              onRetryMedal={award}
+              onOpenAtlas={() => { setSheetOpen(false); p.goTo('atlas'); }}
               save={save}
               onSave={doSave}
               onDiscard={() => setSave({ state: 'discarded' })}
@@ -371,7 +431,7 @@ export function TrainScreen(p: Props) {
         />
       </div>
 
-      <aside class={`side-col ${confirmResign && phase === 'bot' ? 'confirming' : ''}`}>
+      <aside class={`side-col ${confirmResign && phase === 'bot' ? 'confirming' : ''} ${phase === 'bot' && s?.drawOffer === 'bot' ? 'offering' : ''}`}>
         <section class={`status-card ${hintable ? 'has-hint' : ''}`}>
           <div class="status-head">
             {phase === 'line' && <span class="pill brass"><span class="lbl-long">I · Tu línea</span><span class="lbl-short">Línea</span></span>}
@@ -387,11 +447,20 @@ export function TrainScreen(p: Props) {
               {s.mistakes > 0 && <span class="err-count"> · {s.mistakes}<span class="lbl-long"> {s.mistakes === 1 ? 'error' : 'errores'}</span><span class="lbl-short"> ✗</span></span>}
             </p>
           )}
-          {phase === 'bot' && s && (
+          {phase === 'bot' && s && s.drawOffer !== 'bot' && (
             <p class="status-text">
-              {s.thinking ? <><span class="lbl-long">El bot está pensando…</span><span class="lbl-short">Pensando…</span></> : 'Tu turno.'}
+              {s.drawOffer === 'user'
+                ? <><span class="lbl-long">Tablas ofrecidas: responderá con su jugada.</span><span class="lbl-short">Tablas ofrecidas…</span></>
+                : s.thinking ? <><span class="lbl-long">El bot está pensando…</span><span class="lbl-short">Pensando…</span></> : 'Tu turno.'}
               {engineErr && <span class="err-count"> El motor no pudo cargarse en este dispositivo.</span>}
             </p>
+          )}
+          {phase === 'bot' && s?.drawOffer === 'bot' && (
+            <div class="draw-offer" role="group" aria-label="Oferta de tablas">
+              <span class="status-text"><span class="lbl-long">{m?.bot.name} te ofrece tablas.</span><span class="lbl-short">¿Tablas?</span></span>
+              <button type="button" class="btn primary small" onClick={() => sess.current?.acceptDraw()}>Aceptar</button>
+              <button type="button" class="btn ghost small" onClick={() => sess.current?.declineDraw()}>Seguir</button>
+            </div>
           )}
           {phase === 'over' && !sheetOpen && (
             <button type="button" class="btn primary block" onClick={() => setSheetOpen(true)}><span class="lbl-long">Ver resumen y guardar</span><span class="lbl-short">Resumen</span></button>
@@ -418,7 +487,10 @@ export function TrainScreen(p: Props) {
             <button type="button" class="btn ghost" onClick={newSession} disabled={pool.length === 0}><Icon name="skip" size={18} />Otra línea</button>
           )}
           {phase === 'bot' && !confirmResign && (
-            <button type="button" class="btn ghost" onClick={() => setConfirmResign(true)}><Icon name="flag" size={18} />Abandonar</button>
+            <>
+              <button type="button" class="btn ghost" onClick={() => sess.current?.offerDraw()} disabled={!s?.canOfferDraw} title="Ofrecer tablas" aria-label="Ofrecer tablas"><span class="half" aria-hidden="true">½</span><span class="lbl-long">Tablas</span></button>
+              <button type="button" class="btn ghost" onClick={() => setConfirmResign(true)}><Icon name="flag" size={18} />Abandonar</button>
+            </>
           )}
           {phase === 'bot' && confirmResign && (
             <div class="confirm">
@@ -480,6 +552,7 @@ function buildRows(played: PlayedMove[], startFen: string | undefined, linePlies
 function EndSheet(props: {
   outcomeText: string; outcome: 'win' | 'loss' | 'draw'; termination: string; result: string;
   line: Line; rep: RepMeta; bot: Bot; elo: number; mistakes: number; hints: number; userMoves: number; linePlies: number;
+  medal: MedalState; color: 'w' | 'b'; onRetryMedal(): void; onOpenAtlas(): void;
   save: { state: string; res?: SaveResult }; onSave(): void; onDiscard(): void; onNext(): void; onClose(): void; onOpenGames(): void;
 }) {
   const { line, bot, save } = props;
@@ -495,6 +568,7 @@ function EndSheet(props: {
           <h3 class="variant-title">{line.white || 'Sin nombre'}</h3>
           {line.black && line.black !== '?' && <span class="variant-sub">{line.black}</span>}
         </div>
+        <MedalNote medal={props.medal} color={props.color} onRetry={props.onRetryMedal} onOpenAtlas={props.onOpenAtlas} />
         <div class="sheet-grid">
           <div class="sheet-bot">
             <BotAvatar bot={bot} size={40} />
@@ -536,4 +610,33 @@ function EndSheet(props: {
       </div>
     </div>
   );
+}
+
+function MedalNote({ medal, color, onRetry, onOpenAtlas }: { medal: MedalState; color: 'w' | 'b'; onRetry(): void; onOpenAtlas(): void }) {
+  if (medal.kind === 'none') return null;
+  if (medal.kind === 'earned') {
+    return (
+      <div class={`medal-note ${medal.isNew ? 'new' : ''}`}>
+        <MedalBadge state="earned" color={color} size={38} />
+        <div class="mn-text">
+          <strong>{medal.isNew ? 'Emblema nuevo en tu Atlas' : 'Emblema revalidado'}</strong>
+          <span>{medal.isNew ? 'Línea completada sin errores desde la jugada 1.' : `Llevas ${medal.count} repasos perfectos de esta línea.`}</span>
+        </div>
+        <button type="button" class="btn ghost small" onClick={onOpenAtlas}>Ver Atlas</button>
+      </div>
+    );
+  }
+  if (medal.kind === 'pending') return <div class="medal-note"><span class="spinner small" /><div class="mn-text"><span>Registrando el emblema…</span></div></div>;
+  if (medal.kind === 'error') {
+    return (
+      <div class="medal-note bad">
+        <div class="mn-text"><strong>No se pudo registrar el emblema</strong><span>{medal.message}</span></div>
+        <button type="button" class="btn ghost small" onClick={onRetry}>Reintentar</button>
+      </div>
+    );
+  }
+  if (medal.kind === 'guest') {
+    return <div class="medal-note muted"><MedalBadge state="hidden" color={color} size={34} /><div class="mn-text"><strong>Línea perfecta</strong><span>Entra con Lichess (en Ajustes) para ganar su emblema.</span></div></div>;
+  }
+  return <div class="medal-note muted"><MedalBadge state="hidden" color={color} size={34} /><div class="mn-text"><strong>Línea perfecta desde la jugada {medal.startMove}</strong><span>Los emblemas solo cuentan si empiezas en la jugada 1.</span></div></div>;
 }

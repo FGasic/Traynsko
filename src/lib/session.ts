@@ -3,9 +3,11 @@ import { ChessClock, type Side } from './clock';
 import { chooseMove, type Bot } from './bots';
 import type { Engine } from './engine';
 import { START_FEN, type Line } from './pgn';
+import { botAcceptsDraw, botOffersDraw, EQUAL_CP } from './draws';
 
 export type Phase = 'line' | 'bot' | 'over';
 export type Outcome = 'win' | 'loss' | 'draw';
+export type DrawOffer = 'none' | 'user' | 'bot';
 export type MoveBy = 'user' | 'book' | 'bot' | 'pre';
 
 export interface SessionConfig {
@@ -27,6 +29,8 @@ export interface SessionEvents {
   phase(): void;
   end(): void;
   engineError(): void;
+  /** The bot turned down the player's offer, or proposed a draw itself. */
+  draw(kind: 'declined' | 'offered'): void;
 }
 
 export interface PlayedMove { san: string; uci: string; by: MoveBy; clock: number }
@@ -65,6 +69,12 @@ export class Session {
   attempts = 0;
   hints = 0;
   thinking = false;
+  drawOffer: DrawOffer = 'none';
+  private equalStreak = 0;
+  private lastBotOffer = -1000;
+  private lastDeclined = -1000;
+  /** The bot's latest evaluation, from its own side (centipawns). */
+  private lastEval: number | null = null;
   clock: ChessClock;
   result?: '1-0' | '0-1' | '1/2-1/2';
   termination?: string;
@@ -138,8 +148,9 @@ export class Session {
       this.ev.change();
       return 'ok';
     }
-    // bot phase
+    // bot phase: moving on means declining the bot's offer
     try { this.apply(uci, 'user'); } catch { return 'illegal'; }
+    if (this.drawOffer === 'bot') this.drawOffer = 'none';
     if (this.checkEnd()) return 'ok';
     this.botThink();
     this.ev.change();
@@ -183,10 +194,12 @@ export class Session {
     budget = Math.max(300, budget);
     const fen = this.chess.fen();
     let uci: string;
+    let botEval = 0;
     try {
       const cands = await this.engine.search(fen, budget * 0.85);
       if (this.destroyed || this.phase !== 'bot' || this.chess.fen() !== fen) { this.thinking = false; return; }
       uci = chooseMove(fen, cands, this.cfg.bot, this.cfg.elo);
+      botEval = Math.max(...cands.map((c) => c.cp));
     } catch {
       this.thinking = false;
       this.ev.engineError();
@@ -196,9 +209,61 @@ export class Session {
     const wait = budget - (performance.now() - t0);
     if (wait > 0) await new Promise((r) => this.later(() => r(null), wait));
     if (this.destroyed || this.phase !== 'bot' || this.chess.fen() !== fen) { this.thinking = false; return; }
+    // Draws: answer the player's offer, or propose one with this move.
+    const freePlies = this.played.length - this.lineMoves.length;
+    const ctx = { fen, botEval, freePlies };
+    if (this.drawOffer === 'user') {
+      if (botAcceptsDraw(ctx)) { this.finish('1/2-1/2', 'Tablas por acuerdo'); return; }
+      this.drawOffer = 'none';
+      this.lastDeclined = this.played.length;
+      this.ev.draw('declined');
+    }
+    this.lastEval = botEval;
+    this.equalStreak = Math.abs(botEval) <= EQUAL_CP ? this.equalStreak + 1 : 0;
+    const ply = this.played.length;
     this.thinking = false;
     this.apply(uci, 'bot');
-    this.checkEnd();
+    if (this.checkEnd()) { this.ev.change(); return; }
+    if (this.drawOffer === 'none' && botOffersDraw({ ...ctx, fen: this.chess.fen(), equalStreak: this.equalStreak, pliesSinceOffer: ply - this.lastBotOffer })) {
+      this.drawOffer = 'bot';
+      this.lastBotOffer = ply;
+      this.ev.draw('offered');
+    }
+    this.ev.change();
+  }
+
+  /** A new offer is allowed once a few moves have passed since the last refusal. */
+  get canOfferDraw() {
+    return this.phase === 'bot' && this.drawOffer === 'none' && this.played.length - this.lastDeclined >= 6;
+  }
+
+  /**
+   * The player proposes a draw. On the player's turn the bot answers at once from its latest
+   * evaluation; otherwise (or before it has evaluated anything) it answers with its next move.
+   */
+  offerDraw() {
+    if (!this.canOfferDraw) return;
+    if (this.chess.turn() === this.cfg.userColor && !this.thinking && this.lastEval !== null) {
+      const ctx = { fen: this.chess.fen(), botEval: this.lastEval, freePlies: this.played.length - this.lineMoves.length };
+      if (botAcceptsDraw(ctx)) { this.finish('1/2-1/2', 'Tablas por acuerdo'); return; }
+      this.lastDeclined = this.played.length;
+      this.ev.draw('declined');
+      this.ev.change();
+      return;
+    }
+    this.drawOffer = 'user';
+    this.ev.change();
+  }
+
+  /** Accept the bot's offer. */
+  acceptDraw() {
+    if (this.phase !== 'bot' || this.drawOffer !== 'bot') return;
+    this.finish('1/2-1/2', 'Tablas por acuerdo');
+  }
+
+  declineDraw() {
+    if (this.drawOffer !== 'bot') return;
+    this.drawOffer = 'none';
     this.ev.change();
   }
 
@@ -207,6 +272,7 @@ export class Session {
     this.clock.stop();
     this.phase = 'over';
     this.thinking = false;
+    this.drawOffer = 'none';
     this.result = result;
     this.termination = termination;
     const userWins = (result === '1-0' && this.cfg.userColor === 'w') || (result === '0-1' && this.cfg.userColor === 'b');

@@ -9,7 +9,11 @@ import { hashSecret } from '../server/crypto';
 const port = Number(process.env.PORT ?? 8790);
 const master = process.env.TRAYNSKO_MASTER_HASH ?? hashSecret(process.env.DEV_MASTER ?? 'maestro-dev', 1 << 12);
 const kv = memoryKV();
-const app = createApp(async () => kv, master);
+// DEV_FAKE_LICHESS=1 skips lichess.org: the "code" returned to the app is taken as the username.
+const fakeLichess = process.env.DEV_FAKE_LICHESS === '1'
+  ? { identify: async (code: string) => ({ id: code.toLowerCase(), username: code }) }
+  : undefined;
+const app = createApp(async () => kv, master, { lichess: fakeLichess });
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
 createServer(async (req, res) => {
@@ -19,7 +23,7 @@ createServer(async (req, res) => {
     for await (const chunk of req) raw += chunk;
     let body: any = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
-    const out = await app({ method: req.method ?? 'GET', path: url.pathname, query: url.searchParams, auth: req.headers.authorization, body, ip: String(req.headers['x-test-ip'] ?? '127.0.0.1') });
+    const out = await app({ method: req.method ?? 'GET', path: url.pathname, query: url.searchParams, auth: req.headers.authorization, user: req.headers['x-traynsko-user'] as string | undefined, body, ip: String(req.headers['x-test-ip'] ?? '127.0.0.1') });
     res.writeHead(out.status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(out.body));
     return;

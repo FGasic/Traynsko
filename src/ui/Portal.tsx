@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { PublicWorld } from '../../shared/types';
 import { Emblem } from './Emblem';
 import { api, ApiError } from '../lib/api';
-import { prefs } from '../lib/prefs';
+import { prefs, type UserSession } from '../lib/prefs';
+import { Icon } from './parts';
 
 interface Props {
   notice: string | null;
@@ -10,9 +11,13 @@ interface Props {
   onEnter(token: string, world: PublicWorld, name: string): void;
   onMaster(): void;
   hasMaster: boolean;
+  user: UserSession | null;
+  signingIn: boolean;
+  onLogin(returnWorld?: string): void;
+  onLogout(): void;
 }
 
-export function Portal({ notice, preselect, onEnter, onMaster, hasMaster }: Props) {
+export function Portal({ notice, preselect, onEnter, onMaster, hasMaster, user, signingIn, onLogin, onLogout }: Props) {
   const [worlds, setWorlds] = useState<PublicWorld[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [setup, setSetup] = useState<{ db: boolean; master: boolean } | null>(null);
@@ -45,6 +50,8 @@ export function Portal({ notice, preselect, onEnter, onMaster, hasMaster }: Prop
         <h1>Elige tu repertorio</h1>
         <p>Entra con la clave que te dio tu entrenador.</p>
       </section>
+
+      <AccountBar user={user} signingIn={signingIn} onLogin={() => onLogin()} onLogout={onLogout} />
 
       {notice && !chosen && <p class="notice gold portal-notice">{notice}</p>}
 
@@ -84,12 +91,40 @@ export function Portal({ notice, preselect, onEnter, onMaster, hasMaster }: Prop
 
       <footer class="portal-foot">Stockfish 19 se ejecuta en tu dispositivo · Traynsko beta</footer>
 
-      {chosen && <EnterSheet world={chosen} message={preselect === chosen.id ? notice : null} onClose={() => setChosen(null)} onEnter={onEnter} />}
+      {chosen && (
+        <EnterSheet
+          world={chosen} message={preselect === chosen.id ? notice : null} onClose={() => setChosen(null)} onEnter={onEnter}
+          user={user} signingIn={signingIn} onLogin={() => onLogin(chosen.id)}
+        />
+      )}
     </div>
   );
 }
 
-function EnterSheet({ world, message, onClose, onEnter }: { world: PublicWorld; message: string | null; onClose(): void; onEnter: Props['onEnter'] }) {
+/** Who is playing: a Lichess account, or nobody yet. */
+function AccountBar({ user, signingIn, onLogin, onLogout }: { user: UserSession | null; signingIn: boolean; onLogin(): void; onLogout(): void }) {
+  if (signingIn && !user) return <div class="account-bar"><span class="spinner small" /><span class="ab-text">Conectando con Lichess…</span></div>;
+  if (user) {
+    return (
+      <div class="account-bar signed">
+        <span class="ab-dot" aria-hidden="true" />
+        <span class="ab-text">Jugando como <strong>{user.name}</strong></span>
+        <button type="button" class="btn ghost small" onClick={onLogout}><Icon name="logout" size={16} />Salir</button>
+      </div>
+    );
+  }
+  return (
+    <div class="account-bar">
+      <span class="ab-text">Entra con Lichess y tus partidas y emblemas te siguen a cualquier dispositivo.</span>
+      <button type="button" class="btn primary small" onClick={onLogin}><Icon name="login" size={16} />Entrar con Lichess</button>
+    </div>
+  );
+}
+
+function EnterSheet({ world, message, onClose, onEnter, user, signingIn, onLogin }: {
+  world: PublicWorld; message: string | null; onClose(): void; onEnter: Props['onEnter'];
+  user: UserSession | null; signingIn: boolean; onLogin(): void;
+}) {
   const [password, setPassword] = useState('');
   const [name, setName] = useState(prefs.lastName());
   const [busy, setBusy] = useState(false);
@@ -97,17 +132,17 @@ function EnterSheet({ world, message, onClose, onEnter }: { world: PublicWorld; 
   const [show, setShow] = useState(false);
   const pwRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { (name ? pwRef : nameRef).current?.focus(); }, []);
+  useEffect(() => { (user || name ? pwRef : nameRef).current?.focus(); }, []);
 
   async function submit(e: Event) {
     e.preventDefault();
-    if (!name.trim()) { setErr('Escribe tu nombre: así encontrarás tus partidas en cualquier dispositivo.'); nameRef.current?.focus(); return; }
+    if (!user && !name.trim()) { setErr('Escribe tu nombre o entra con Lichess.'); nameRef.current?.focus(); return; }
     if (!password.trim()) { setErr('Escribe la clave del repertorio.'); pwRef.current?.focus(); return; }
     setBusy(true); setErr(null);
     try {
       const r = await api.enter(world.id, password);
-      prefs.saveLastName(name.trim());
-      onEnter(r.token, r.world, name.trim());
+      if (!user) prefs.saveLastName(name.trim());
+      onEnter(r.token, r.world, user ? user.name : name.trim());
     } catch (e: any) {
       setErr(e.code === 'wrong_password' ? 'Esa clave no abre este repertorio. Revísala y vuelve a probar.' : e.message);
       setBusy(false);
@@ -127,14 +162,23 @@ function EnterSheet({ world, message, onClose, onEnter }: { world: PublicWorld; 
         </div>
         <div class="gate-body">
           {message && <p class="notice gold">{message}</p>}
-          <label class="field-label" for="gate-name">Tu nombre</label>
-          <input id="gate-name" ref={nameRef} class="input" value={name} maxLength={40} autoComplete="name" placeholder="Nombre y apellido" onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+          {user ? (
+            <div class="gate-account"><span class="ab-dot" aria-hidden="true" />Jugarás como <strong>{user.name}</strong><span class="tag">Lichess</span></div>
+          ) : (
+            <>
+              <button type="button" class="btn ghost block" onClick={onLogin} disabled={signingIn}><Icon name="login" size={18} />{signingIn ? 'Conectando…' : 'Entrar con Lichess'}</button>
+              <p class="help">Con tu cuenta ganas emblemas y tus partidas quedan a tu nombre, sin riesgo de confusiones.</p>
+              <div class="or-rule"><span>o sin cuenta</span></div>
+              <label class="field-label" for="gate-name">Tu nombre</label>
+              <input id="gate-name" ref={nameRef} class="input" value={name} maxLength={40} autoComplete="name" placeholder="Nombre y apellido" onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+            </>
+          )}
           <label class="field-label" for="gate-pass">Clave del repertorio</label>
           <div class="pass-row">
             <input id="gate-pass" ref={pwRef} class="input" type={show ? 'text' : 'password'} value={password} autoComplete="off" autoCapitalize="off" autoCorrect="off" spellcheck={false} onInput={(e) => setPassword((e.target as HTMLInputElement).value)} />
             <button type="button" class="btn ghost small" onClick={() => setShow(!show)}>{show ? 'Ocultar' : 'Ver'}</button>
           </div>
-          <p class="help">No distingue mayúsculas. Tus partidas se guardan con tu nombre: usa siempre el mismo.</p>
+          <p class="help">{user ? 'No distingue mayúsculas.' : 'No distingue mayúsculas. Sin cuenta, tus partidas se guardan con tu nombre: usa siempre el mismo.'}</p>
           {err && <p class="form-error" role="alert">{err}</p>}
         </div>
         <div class="sheet-foot">

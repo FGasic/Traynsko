@@ -1,0 +1,8 @@
+[Event "Finales"]
+[White "Torres igualadas"]
+[Black "Fortaleza con h4-h5"]
+[SetUp "1"]
+[FEN "1r6/6k1/6p1/7p/7P/6P1/6K1/R7 w - - 0 50"]
+[Result "*"]
+
+50. Ra7 Kf6 51. Ra6+ *
