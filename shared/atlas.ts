@@ -28,7 +28,7 @@ export interface Medal {
 const START4 = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -';
 
 /** 53-bit string hash (cyrb53); two seeds give a 106-bit fingerprint. */
-function cyrb53(s: string, seed: number): string {
+export function cyrb53(s: string, seed: number): string {
   let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
   for (let i = 0; i < s.length; i++) {
     const ch = s.charCodeAt(i);

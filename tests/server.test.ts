@@ -4,6 +4,7 @@ import { hashSecret } from '../server/crypto';
 import { parseRepertoire } from '../src/lib/pgn';
 import { readFileSync } from 'node:fs';
 import { lineFingerprint } from '../shared/atlas';
+import { lineKey } from '../shared/picks';
 import { lichessClient } from '../server/lichess';
 import { botAcceptsDraw, botOffersDraw, position } from '../src/lib/draws';
 
@@ -186,6 +187,41 @@ const login = (code: string, ip = '2.2.2.2') => call('POST', '/api/auth/lichess'
     await call('PATCH', `/api/admin/worlds/${pw}`, { listed: true }, adm);
     r = await call('GET', '/api/worlds'); check((r.body as any).worlds.some((w: any) => w.id === pw), 'listed repertoire appears in the Biblioteca');
     await call('DELETE', `/api/admin/worlds/${pw}`, {}, adm);
+  }
+
+  /* ---------- each person's selection of lines and sets ---------- */
+  {
+    const adm = ((await call('POST', '/api/admin/login', { password: 'Maestra-123' }, undefined, '8.8.8.0')).body as any).token;
+    const pw = ((await call('POST', '/api/admin/worlds', { name: 'Siciliana', password: 'sici-2026' }, adm)).body as any).world.id;
+    const sic = parseRepertoire(readFileSync('tests/fixtures/siciliana-negras.pgn', 'utf8')).lines;
+    await call('POST', `/api/admin/worlds/${pw}/reps`, { name: 'Negras', color: 'b', lines: sic }, adm);
+    const marta = ((await call('POST', '/api/enter', { world: pw, password: 'sici-2026', name: 'Marta' }, undefined, '8.8.8.1')).body as any).token;
+    const pedro = ((await call('POST', '/api/enter', { world: pw, password: 'sici-2026', name: 'Pedro' }, undefined, '8.8.8.2')).body as any).token;
+    r = await call('GET', '/api/picks', {}, marta); check(r.status === 200 && (r.body as any).picks === null && (r.body as any).synced === true, 'picks: nothing saved yet');
+    const k0 = lineKey(sic[0]), k3 = lineKey(sic[3]), k4 = lineKey(sic[4]);
+    const mine = { v: 1, off: [k0], sets: [{ id: 'alapin01', name: 'Alapin', lines: [k3, k4], rep: 'RepX1234' }], at: '2026-10-22T10:00:00.000Z' };
+    r = await call('PUT', '/api/picks', { picks: mine }, marta); check(r.status === 200 && (r.body as any).synced === true, 'picks: saved');
+    r = await call('GET', '/api/picks', {}, marta);
+    const got = (r.body as any).picks;
+    check(got?.sets[0].name === 'Alapin' && got.sets[0].lines.length === 2 && got.off[0] === k0, 'picks: read back');
+    r = await call('GET', '/api/picks', {}, pedro); check((r.body as any).picks === null, 'picks: each person has their own');
+    r = await call('PUT', '/api/picks', { picks: { ...mine, sets: [{ id: '!', name: '', lines: [] }] } }, marta); check(r.status === 400, 'picks: invalid refused');
+    r = await call('PUT', '/api/picks', { picks: { ...mine, off: Array.from({ length: 7000 }, (_, i) => i.toString(36).padStart(11, 'a')) } }, marta); check(r.status === 400, 'picks: too large refused');
+    r = await call('PUT', '/api/picks', { picks: mine }); check(r.status === 401, 'picks: needs a session');
+    r = await call('GET', '/api/picks', {}, adm); check(r.status === 400, 'picks: not with the master key');
+    const asMaster = ((await call('POST', '/api/admin/enter', { world: pw }, adm)).body as any).token;
+    r = await call('PUT', '/api/picks', { picks: mine }, asMaster); check(r.status === 200 && (r.body as any).synced === false, 'picks: master playing, no account: kept on the device');
+    const fl = (await login('FrancoPicks', '8.8.8.3')).body as any;
+    r = await call('PUT', '/api/picks', { picks: mine }, asMaster, '8.8.8.3', fl.token); check((r.body as any).synced === true, 'picks: master playing with his account: saved');
+    const acc = ((await call('POST', '/api/enter', { password: 'sici-2026' }, undefined, '8.8.8.3', fl.token)).body as any).entries[0].token;
+    r = await call('GET', '/api/picks', {}, acc, '8.8.8.3', fl.token); check((r.body as any).picks?.sets.length === 1, 'picks: same account, any device');
+    r = await call('DELETE', '/api/me', {}, undefined, '8.8.8.3', fl.token); check(r.status === 200, 'picks: account deleted');
+    check((await kv.hget('tr:wp:' + pw, 'lichess:francopicks')) === null, 'picks: removed with the account');
+    // a person blocked from the repertoire can't read or write theirs
+    await call('POST', `/api/admin/worlds/${pw}/access`, { member: 'pedro', blocked: true }, adm);
+    r = await call('PUT', '/api/picks', { picks: mine }, pedro); check(r.status === 403, 'picks: blocked person refused');
+    await call('DELETE', `/api/admin/worlds/${pw}`, {}, adm);
+    check(Object.keys(await kv.hgetall('tr:wp:' + pw)).length === 0, 'picks: removed with the repertoire');
   }
 
   /* ---------- draws ---------- */

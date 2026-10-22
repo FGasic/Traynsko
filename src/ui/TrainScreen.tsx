@@ -14,6 +14,7 @@ import { fmtClock } from '../lib/clock';
 import { sound } from '../lib/sound';
 import { useBoardFit } from '../lib/fit';
 import { lineFingerprint } from '../../shared/atlas';
+import { lineKey } from '../../shared/picks';
 import { MedalBadge } from './Atlas';
 
 export interface SaveResult { ok: boolean; message: string }
@@ -32,7 +33,8 @@ interface Props {
   active: boolean;
   settings: Settings;
   reps: Repertoire[];
-  disabled: string[];
+  /** lines the player left out of training (Biblioteca) */
+  off: Set<string>;
   linesLoaded: boolean;
   engine: () => Engine;
   playerName: string;
@@ -93,9 +95,10 @@ export function TrainScreen(p: Props) {
 
   const pool = useMemo(() => {
     const out: { rep: RepMeta; line: Line }[] = [];
-    for (const rep of p.reps) if (!p.disabled.includes(rep.id)) for (const line of rep.lines) out.push({ rep, line });
+    for (const rep of p.reps) for (const line of rep.lines) if (!p.off.has(lineKey(line))) out.push({ rep, line });
     return out;
-  }, [p.reps, p.disabled.join(',')]);
+  }, [p.reps, p.off]);
+  const totalLines = useMemo(() => p.reps.reduce((n, r) => n + r.lines.length, 0), [p.reps]);
 
   const s = sess.current;
   const userColor = s?.cfg.userColor ?? meta.current?.rep.color ?? 'w';
@@ -252,7 +255,10 @@ export function TrainScreen(p: Props) {
 
   useEffect(() => () => { sess.current?.destroy(); releaseWake(); }, []);
   // read-only hook for automated board checks
-  useEffect(() => { (window as any).__traynskoFen = () => sess.current?.chess.fen() ?? null; }, []);
+  useEffect(() => {
+    (window as any).__traynskoFen = () => sess.current?.chess.fen() ?? null;
+    (window as any).__traynskoLine = () => meta.current?.line.uci ?? null;
+  }, []);
 
   // clock tick
   useEffect(() => {
@@ -413,6 +419,11 @@ export function TrainScreen(p: Props) {
               <div class="ready-card">
                 <button type="button" class="btn primary start-btn" onClick={begin}><Icon name="play" size={18} />Comenzar partida</button>
                 <span class="ready-sub">Juegas con {userColor === 'w' ? 'blancas' : 'negras'}{opposite ? ' · color contrario' : ''}</span>
+                {pool.length < totalLines && (
+                  <button type="button" class="ready-pick" onClick={() => p.goTo('library')} title="Elegir las líneas en la Biblioteca">
+                    {pool.length === 1 ? '1 línea elegida' : `${pool.length} de ${totalLines} líneas`}
+                  </button>
+                )}
               </div>
               <button type="button" class="gear-btn" aria-label="Opciones de la partida" title="Opciones de la partida" aria-haspopup="dialog" aria-expanded={optsOpen} onClick={() => setOptsOpen(true)}>
                 <GearIcon size={20} />
@@ -438,9 +449,9 @@ export function TrainScreen(p: Props) {
             <div class="board-empty">
               <div class="empty-card">
                 <span class="eyebrow">{p.reps.length ? 'Nada seleccionado' : 'Repertorio en preparación'}</span>
-                <h2>{p.reps.length ? 'Activa algún capítulo' : 'Aún no hay líneas aquí'}</h2>
+                <h2>{p.reps.length ? 'Elige qué entrenar' : 'Aún no hay líneas aquí'}</h2>
                 <p>{p.reps.length
-                  ? 'Todos los capítulos de este repertorio están desactivados. Activa al menos uno en la Biblioteca.'
+                  ? 'Todas las líneas de este repertorio están fuera del entrenamiento. Activa al menos una en la Biblioteca.'
                   : p.isMaster ? 'Sube el primer PGN de este repertorio desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido líneas a este repertorio. Vuelve a intentarlo más tarde.'}</p>
                 <div class="empty-actions">
                   {p.reps.length > 0 && <button type="button" class="btn primary" onClick={() => p.goTo('library')}>Ir a la Biblioteca</button>}

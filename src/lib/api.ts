@@ -1,5 +1,6 @@
 import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, Member, PublicWorld, RepMeta, Repertoire } from '../../shared/types';
 import type { Medal, UserInfo } from '../../shared/atlas';
+import type { Picks } from '../../shared/picks';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
@@ -12,7 +13,7 @@ export const setUserToken = (t: string | null) => { userToken = t; };
 let playerName: string | null = null;
 export const setPlayerName = (n: string | null) => { playerName = n; };
 
-async function call<T>(method: string, path: string, body?: unknown, token?: string): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, token?: string, keepalive = false): Promise<T> {
   let res: Response;
   try {
     res = await fetch('/api/' + path, {
@@ -24,6 +25,7 @@ async function call<T>(method: string, path: string, body?: unknown, token?: str
         ...(playerName ? { 'X-Traynsko-Player': encodeURIComponent(playerName) } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      keepalive,
     });
   } catch {
     throw new ApiError(0, 'offline', 'Sin conexión. Revisa internet y vuelve a intentarlo.');
@@ -64,6 +66,9 @@ export const api = {
   claimPreview: (t: string, name: string) => call<{ games: number; claimed: 'you' | 'other' | null }>('GET', 'me/claim' + q({ name }), undefined, t),
   claim: (t: string, name: string) => call<{ games: number }>('POST', 'me/claim', { name }, t),
   medals: () => call<{ medals: Medal[] }>('GET', 'medals').then((r) => r.medals),
+  /** The player's selection of lines and sets in the open repertoire (`synced`: kept on the server for this person). */
+  picks: (t: string) => call<{ picks: Picks | null; synced: boolean }>('GET', 'picks', undefined, t),
+  savePicks: (t: string, picks: Picks, keepalive = false) => call<{ ok: true; synced: boolean }>('PUT', 'picks', { picks }, t, keepalive),
   awardMedal: (t: string, m: { repId: string; lineId: string; startPly: number; errors: number; hints: number }) =>
     call<{ medal: Medal; isNew: boolean }>('POST', 'medals', m, t),
 

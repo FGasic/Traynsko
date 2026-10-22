@@ -53,7 +53,7 @@ with sync_playwright() as p:
     page.screenshot(path=f'{SHOTS}/a02-gate-guest.png')
     page.locator('.key-form').get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1300)
     page.locator('.tab', has_text='Biblioteca').click(); page.wait_for_timeout(300)
-    page.get_by_role('switch', name='Entrenar Benko Negras').click(); page.wait_for_timeout(300)
+    page.get_by_role('checkbox', name='Entrenar Benko Negras').click(); page.wait_for_timeout(300)
     page.locator('.tab', has_text='Entrenar').click(); page.wait_for_timeout(800)
     page.locator('.train .start-btn').click(); page.wait_for_timeout(600)
     play_line(page, CATALAN, wrong_first=True); page.wait_for_timeout(1500)

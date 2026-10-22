@@ -18,7 +18,7 @@ export interface Settings {
   /** Play the repertoire's side, or the other one (the user plays the line's replies). */
   colorMode: 'rep' | 'opposite';
   lastLineId?: string;
-  /** repertoire ids the player switched off, per world */
+  /** chapters switched off, per world: superseded by the selection of lines (read once, to carry it over) */
   disabledReps: Record<string, string[]>;
 }
 
@@ -79,6 +79,12 @@ export const prefs = {
   saveAdminToken: (t: string | null) => put('admin', t),
   user: () => get<UserSession | null>('user', null),
   saveUser: (u: UserSession | null) => put('user', u),
+  /** The player's selection of lines on this device (also kept on the server), and whose it is. */
+  picks: (worldId: string) => get<{ who: string; picks: unknown } | null>('picks:' + worldId, null),
+  savePicks: (worldId: string, v: { who: string; picks: unknown } | null) => put('picks:' + worldId, v),
+  /** Chapters unfolded in the Biblioteca, per repertoire. */
+  libOpen: (worldId: string) => get<Record<string, string[]>>('libOpen', {})[worldId] ?? null,
+  saveLibOpen: (worldId: string, ids: string[]) => put('libOpen', { ...get<Record<string, string[]>>('libOpen', {}), [worldId]: ids }),
   lastName: () => get<string>('name', ''),
   saveLastName: (n: string) => put('name', n),
 };

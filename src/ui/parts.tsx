@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import type { Bot } from '../lib/bots';
 
-export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external' | 'library' | 'clock' | 'play' | 'lock' | 'back';
+export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external' | 'library' | 'clock' | 'play' | 'lock' | 'back' | 'search' | 'plus';
 
 const PATHS: Record<IconName, string> = {
   train: 'M4 4h16v16H4z M4 12h16 M12 4v16 M4 4l8 8 M12 12l8 8',
@@ -32,6 +32,8 @@ const PATHS: Record<IconName, string> = {
   play: 'M8 5.5l10.5 6.5L8 18.5z',
   lock: 'M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3',
   back: 'M15 6l-6 6 6 6',
+  search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13z M15.3 15.3 20 20',
+  plus: 'M12 5v14 M5 12h14',
 };
 
 /** Cog outline (eight teeth) with a hole, drawn once. */
@@ -110,4 +112,34 @@ export function Segmented<T extends string>({ id, value, options, onChange }: { 
 
 export function PieceDot({ color }: { color: 'w' | 'b' }) {
   return <span class={`piece-dot ${color === 'w' ? 'white' : 'black'}`} aria-label={color === 'w' ? 'Blancas' : 'Negras'} />;
+}
+
+/** Tri-state checkbox: a chapter or a set can be partly in training. */
+export function Check({ id, state, label, onToggle }: { id?: string; state: 'on' | 'off' | 'mixed'; label: string; onToggle(): void }) {
+  return (
+    <button id={id} type="button" role="checkbox" aria-checked={state === 'mixed' ? 'mixed' : state === 'on'} aria-label={label} title={label} class={`check ${state}`} onClick={onToggle}>
+      <span class="box" aria-hidden="true">
+        {state === 'on' && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
+        {state === 'mixed' && <i />}
+      </span>
+    </button>
+  );
+}
+
+/** Six dots: the handle to drag a line. */
+export function Grip({ size = 18 }: { size?: number }) {
+  return (
+    <svg class="icon" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      {[6, 12, 18].map((y) => <><circle cx="9" cy={y} r="1.7" /><circle cx="15" cy={y} r="1.7" /></>)}
+    </svg>
+  );
+}
+
+/** Three dots: more options. */
+export function Dots({ size = 20 }: { size?: number }) {
+  return (
+    <svg class="icon" width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5.5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="18.5" cy="12" r="1.8" />
+    </svg>
+  );
 }

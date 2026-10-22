@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { TrainScreen, type AwardResult, type SaveResult } from './TrainScreen';
 import { BotsScreen } from './BotsScreen';
 import { SettingsScreen } from './SettingsScreen';
@@ -14,7 +14,8 @@ import { startLichessLogin, takeLichessReturn } from '../lib/lichess';
 import type { Medal } from '../../shared/atlas';
 import { Engine } from '../lib/engine';
 import { setSoundEnabled, primeSound } from '../lib/sound';
-import type { Line, PublicWorld, RepMeta, Repertoire } from '../../shared/types';
+import { playerKey, type Line, type PublicWorld, type RepMeta, type Repertoire } from '../../shared/types';
+import { cleanPicks, emptyPicks, fromDisabledChapters, type Picks } from '../lib/picks';
 
 type Tab = 'train' | 'games' | 'library' | 'atlas' | 'bots' | 'settings';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
@@ -61,6 +62,9 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [gamesKey, setGamesKey] = useState(0);
   const engineRef = useRef<Engine | null>(null);
+  /** The player's selection of lines in the open repertoire (tagged with its repertoire, so a stale one is never used). */
+  const [picksState, setPicksState] = useState<{ world: string; picks: Picks } | null>(null);
+  const picksRef = useRef<{ world: string; token: string; timer: ReturnType<typeof setTimeout> | undefined; pending: Picks | null; edited: boolean } | null>(null);
 
   const toast = (text: string, kind: Toast['kind'] = 'info') => {
     const id = Date.now() + Math.random();
@@ -149,6 +153,7 @@ export function App() {
   }
 
   function leaveWorld(message: string | null, reselect?: string) {
+    flushPicks();
     setBusy(false);
     prefs.saveSession(null);
     setSession(null);
@@ -203,6 +208,7 @@ export function App() {
 
   function enterWorld(token: string, world: PublicWorld, name: string, asMaster = false, more: KnownWorld[] = []) {
     const s: WorldSession = { token, world, name, asMaster };
+    flushPicks();
     prefs.saveSession(s);
     remember([s, ...more]);
     setBusy(false);
@@ -233,13 +239,71 @@ export function App() {
   function updateSettings(patch: Partial<Settings>) {
     setSettings((prev) => { const next = { ...prev, ...patch }; prefs.saveSettings(next); return next; });
   }
-  const disabled = session ? settings.disabledReps[session.world.id] ?? [] : [];
-  function toggleRep(id: string, on: boolean) {
-    if (!session) return;
-    const cur = new Set(disabled);
-    if (on) cur.delete(id); else cur.add(id);
-    updateSettings({ disabledReps: { ...settings.disabledReps, [session.world.id]: [...cur] } });
+  /* ---------- the player's selection of lines ---------- */
+  // Whose selection this is: the Lichess account, or the name typed on this device.
+  const who = user ? 'lichess:' + user.id : session ? (session.asMaster ? 'master' : 'guest:' + playerKey(session.name)) : '';
+  const picks = session && picksState?.world === session.world.id ? picksState.picks : null;
+  const offKeys = useMemo(() => new Set(picks?.off ?? []), [picks?.off]);
+
+  useEffect(() => {
+    if (!session || !loaded) return;
+    const wid = session.world.id, token = session.token;
+    const stored = prefs.picks(wid);
+    const local = stored ? cleanPicks(stored.picks) : null;
+    // devices from before the selection of lines kept switched-off chapters in their settings
+    const legacy = settings.disabledReps[wid];
+    const migrated = !local && legacy?.length ? fromDisabledChapters(reps, legacy) : null;
+    if (legacy) { const rest = { ...settings.disabledReps }; delete rest[wid]; updateSettings({ disabledReps: rest }); }
+    const base = local ?? migrated ?? emptyPicks();
+    if (migrated) prefs.savePicks(wid, { who, picks: migrated });
+    // a change still waiting goes to whoever made it; from here on, this repertoire and this person
+    flushPicks();
+    picksRef.current = { world: wid, token, timer: undefined, pending: null, edited: false };
+    setPicksState({ world: wid, picks: base });
+    let alive = true;
+    api.picks(token).then((r) => {
+      const cur = picksRef.current;
+      if (!alive || !r.synced || !cur || cur.world !== wid || cur.edited) return;
+      const server = r.picks;
+      const mine = (!!local && stored!.who === who) || !!migrated;
+      if (server && !(mine && base.at > server.at)) {
+        setPicksState({ world: wid, picks: server });
+        prefs.savePicks(wid, { who, picks: server });
+      } else if (local || migrated) {
+        // the server has nothing (or an older copy): this device's selection goes up
+        cur.pending = base;
+        flushPicks();
+      }
+    }).catch((e) => { if (alive) handleAuth(e); });
+    return () => { alive = false; };
+  }, [session?.token, loaded, user?.id]);
+
+  function changePicks(next: Picks) {
+    const cur = picksRef.current;
+    if (!session || !cur || cur.world !== session.world.id) return;
+    setPicksState({ world: cur.world, picks: next });
+    prefs.savePicks(cur.world, { who, picks: next });
+    cur.edited = true;
+    cur.pending = next;
+    clearTimeout(cur.timer);
+    cur.timer = setTimeout(() => flushPicks(), 900);
   }
+  /** Send the latest change now. If it fails it stays on this device and goes up with the next visit. */
+  function flushPicks(keepalive = false) {
+    const cur = picksRef.current;
+    if (!cur?.pending) return;
+    const p = cur.pending;
+    cur.pending = null;
+    clearTimeout(cur.timer);
+    api.savePicks(cur.token, p, keepalive).catch((e) => { if (!keepalive) handleAuth(e); });
+  }
+  useEffect(() => {
+    const hide = () => { if (document.visibilityState === 'hidden') flushPicks(true); };
+    const gone = () => flushPicks(true);
+    document.addEventListener('visibilitychange', hide);
+    window.addEventListener('pagehide', gone);
+    return () => { document.removeEventListener('visibilitychange', hide); window.removeEventListener('pagehide', gone); };
+  }, []);
 
   const playerName = user?.name ?? session?.name ?? '';
 
@@ -317,8 +381,8 @@ export function App() {
                 active={tab === 'train' && view === 'world'}
                 settings={settings}
                 reps={reps0}
-                disabled={disabled}
-                linesLoaded={loaded}
+                off={offKeys}
+                linesLoaded={loaded && !!picks}
                 engine={engine}
                 playerName={playerName}
                 isMaster={!!session.asMaster}
@@ -335,7 +399,7 @@ export function App() {
             {tab === 'library' && (
               <div class="screen page">
                 <LibraryScreen
-                  world={session.world} reps={reps0} disabled={disabled} onToggle={toggleRep}
+                  world={session.world} reps={reps0} loaded={loaded} picks={picks} onPicks={changePicks} toast={toast}
                   isMaster={!!session.asMaster} onOpenMaster={openMaster}
                   known={known} onOpen={openKnown}
                   onEnter={(t, w, n) => guard(() => enterWorld(t, w, n), `Abrir «${w.name}»`)}

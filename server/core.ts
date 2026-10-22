@@ -4,6 +4,7 @@ import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, Member, PlayerS
 import { playerKey } from '../shared/types';
 import { ACCOUNT_PREFIX, accountKey, lineFingerprint, type Medal, type UserInfo } from '../shared/atlas';
 import { lichessClient, type LichessClient } from './lichess';
+import { cleanPicks, type Picks } from '../shared/picks';
 
 export interface Req {
   method: string;
@@ -61,6 +62,8 @@ const K = {
   userGames: (id: string) => `tr:ug:${id}`,
   claim: (worldId: string, guest: string) => `tr:claim:${worldId}:${guest}`,
   members: (worldId: string) => `tr:wm:${worldId}`,
+  /** each person's selection of lines and sets in a repertoire (field: player key) */
+  picks: (worldId: string) => `tr:wp:${worldId}`,
   rl: (scope: string, ip: string) => `tr:rl:${scope}:${ip}`,
 };
 
@@ -413,6 +416,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       for (const g of games) await deleteGame(kv, g);
       const ak = accountKey(u.id);
       for (const w of await allWorlds(kv)) {
+        await kv.hdel(K.picks(w.id), ak);
         const m = await memberOf(kv, w.id, ak);
         if (!m) continue;
         if (m.blocked) await kv.hset(K.members(w.id), ak, { ...m, name: 'Cuenta borrada' });   // a block survives the account
@@ -477,6 +481,26 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       all[fp] = medal;
       await kv.set(K.medals(user.id), all);
       return { status: 200, body: { medal, isNew: !prev } };
+    }
+
+    /* ---------- the player's selection of lines and sets ---------- */
+    if (a === 'picks' && !b && (M === 'GET' || M === 'PUT')) {
+      const s = await auth(kv, req);
+      if (s.role !== 'world') fail(400, 'invalid', 'Entra a un repertorio.');
+      const wa = s as WorldAuth;
+      // the master playing his own repertoire keeps it on his Lichess account, if he is signed in
+      const acc = wa.session.adm ? accountIdOf(req) : null;
+      const who = wa.member ?? (acc ? accountKey(acc) : null);
+      if (M === 'GET') {
+        const picks = who ? await kv.hget<Picks>(K.picks(wa.world.id), who) : null;
+        return { status: 200, body: { picks: picks ? cleanPicks(picks) : null, synced: !!who } };
+      }
+      const picks = cleanPicks(req.body?.picks);
+      if (!picks) fail(400, 'invalid', 'Selección de líneas no válida.');
+      if (!who) return { status: 200, body: { ok: true, synced: false } };
+      await limit(kv, 'picks', req.ip, 900, 3600);
+      await kv.hset(K.picks(wa.world.id), who, picks);
+      return { status: 200, body: { ok: true, synced: true } };
     }
 
     /* ---------- student or admin ---------- */
@@ -617,7 +641,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       if (b === 'worlds' && c && !d && M === 'DELETE') {
         const w = await loadWorld(kv, c);
         const gameIds = await kv.zrevrange(K.worldGames(w.id), 0, -1);
-        await kv.del(...gameIds.map(K.game), ...w.reps.map((r) => K.rep(r.id)), K.worldGames(w.id), K.stats(w.id), K.world(w.id), K.members(w.id));
+        await kv.del(...gameIds.map(K.game), ...w.reps.map((r) => K.rep(r.id)), K.worldGames(w.id), K.stats(w.id), K.world(w.id), K.members(w.id), K.picks(w.id));
         const ids = (await kv.get<string[]>(K.worlds)) ?? [];
         await kv.set(K.worlds, ids.filter((x) => x !== w.id));
         return { status: 200, body: { ok: true } };

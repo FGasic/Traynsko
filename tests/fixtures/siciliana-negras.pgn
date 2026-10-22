@@ -1,0 +1,48 @@
+[Event "Siciliana"]
+[White "Najdorf 6.Ag5"]
+[Black "Línea principal 7.f4"]
+[Result "*"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Bg5 e6 7. f4 Be7 8. Qf3 Qc7 9. O-O-O Nbd7 *
+
+[Event "Siciliana"]
+[White "Najdorf 6.Ae3"]
+[Black "Ataque inglés"]
+[Result "*"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 e5 7. Nb3 Be6 8. f3 Be7 9. Qd2 O-O 10. O-O-O Nbd7 11. g4 b5 12. g5 b4 *
+
+[Event "Siciliana"]
+[White "Najdorf 6.Ae2"]
+[Black "Clásica"]
+[Result "*"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be2 e5 7. Nb3 Be7 8. O-O O-O 9. Kh1 Be6 10. f4 Qc7 11. a4 Nbd7 12. Be3 *
+
+[Event "Siciliana"]
+[White "Alapin 2...d5"]
+[Black "3.exd5 Dxd5"]
+[Result "*"]
+
+1. e4 c5 2. c3 d5 3. exd5 Qxd5 4. d4 Nf6 5. Nf3 e6 6. Be2 Nc6 7. O-O cxd4 8. cxd4 Be7 *
+
+[Event "Siciliana"]
+[White "Alapin 2...Cf6"]
+[Black "3.e5 Cd5"]
+[Result "*"]
+
+1. e4 c5 2. c3 Nf6 3. e5 Nd5 4. d4 cxd4 5. Nf3 Nc6 6. cxd4 d6 *
+
+[Event "Siciliana"]
+[White "Moscú 3.Ab5+"]
+[Black "3...Ad7"]
+[Result "*"]
+
+1. e4 c5 2. Nf3 d6 3. Bb5+ Bd7 4. Bxd7+ Qxd7 5. O-O Nc6 6. c3 Nf6 7. Re1 e6 8. d4 cxd4 9. cxd4 d5 10. e5 Ne4 *
+
+[Event "Siciliana"]
+[White "Gran Prix 2.Cc3"]
+[Black "Cerrada"]
+[Result "*"]
+
+1. e4 c5 2. Nc3 d6 3. f4 Nc6 4. Nf3 g6 *

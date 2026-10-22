@@ -2,8 +2,9 @@ import { useEffect, useState } from 'preact/hooks';
 import type { GameRecord, GameSummary, PublicWorld, Repertoire } from '../../shared/types';
 import { GameList, fmtPts, scoreLine } from './GameList';
 import { GameViewer } from './GameViewer';
-import { Icon, PieceDot, Toggle } from './parts';
-import { lineName } from '../lib/pgn';
+import { Icon } from './parts';
+import { LineManager } from './LineManager';
+import type { Picks } from '../lib/picks';
 import { api } from '../lib/api';
 import { gamesToPgn } from '../lib/pgnOut';
 import type { KnownWorld, UserSession } from '../lib/prefs';
@@ -81,20 +82,18 @@ export function MyGamesScreen({ token, player, boardTheme, refreshKey, toast, on
 
 /* ---------------- Biblioteca: every repertoire, with the chapters of the open one ---------------- */
 
-export function LibraryScreen({ world, reps, disabled, onToggle, isMaster, onOpenMaster, known, onOpen, onEnter, user, signingIn, onLogin }: {
-  world: PublicWorld; reps: Repertoire[]; disabled: string[]; onToggle(id: string, on: boolean): void; isMaster: boolean; onOpenMaster(): void;
+export function LibraryScreen({ world, reps, loaded, picks, onPicks, toast, isMaster, onOpenMaster, known, onOpen, onEnter, user, signingIn, onLogin }: {
+  world: PublicWorld; reps: Repertoire[]; loaded: boolean; picks: Picks | null; onPicks(p: Picks): void; toast(t: string, k?: 'info' | 'good' | 'bad'): void;
+  isMaster: boolean; onOpenMaster(): void;
   known: KnownWorld[]; onOpen(k: KnownWorld): void; onEnter(token: string, world: PublicWorld, name: string): void;
   user: UserSession | null; signingIn: boolean; onLogin(returnWorld?: string): void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
   const [all, setAll] = useState<PublicWorld[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [gate, setGate] = useState<PublicWorld | null>(null);
   const load = () => { setErr(null); api.worlds().then(setAll).catch((e) => setErr(e.message)); };
   useEffect(load, []);
 
-  const active = reps.filter((r) => !disabled.includes(r.id));
-  const lines = active.reduce((n, r) => n + r.lines.length, 0);
   const others = (all ?? []).filter((w) => w.id !== world.id);
   const knownOf = (id: string) => known.find((k) => k.world.id === id);
 
@@ -104,12 +103,12 @@ export function LibraryScreen({ world, reps, disabled, onToggle, isMaster, onOpe
         <div>
           <span class="eyebrow">Todos los repertorios</span>
           <h1>Biblioteca</h1>
-          <p class="lede">Los repertorios de tu entrenador. Entra a otro con su clave; los que abras quedan también en tu portada.</p>
+          <p class="lede">Elige qué líneas entrenas y ordénalas en tus propios conjuntos. Más abajo, los demás repertorios de tu entrenador.</p>
         </div>
         {isMaster && <button type="button" class="btn ghost" onClick={onOpenMaster}><span class="star">★</span>Gestionar en la Sala</button>}
       </header>
 
-      <section class="panel lib-current" style={{ '--h': world.hue } as any} aria-label={`Capítulos de ${world.name}`}>
+      <section class="panel lib-current" style={{ '--h': world.hue } as any} aria-label={`Líneas de ${world.name}`}>
         <div class="lib-head">
           <Emblem emblem={world.emblem} hue={world.hue} size={52} />
           <div class="lib-id">
@@ -118,37 +117,12 @@ export function LibraryScreen({ world, reps, disabled, onToggle, isMaster, onOpe
             {world.subtitle && <span class="lib-sub">{world.subtitle}</span>}
           </div>
         </div>
-        {reps.length === 0 ? (
+        {!loaded || !picks ? (
+          <div class="loading"><div class="spinner" />Cargando las líneas…</div>
+        ) : reps.length === 0 ? (
           <p class="help">{isMaster ? 'Aún no hay capítulos: sube un PGN desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido líneas a este repertorio.'}</p>
         ) : (
-          <>
-            <p class="summary">Capítulos: <strong>{active.length}</strong> de {reps.length} activos · <strong>{lines}</strong> líneas en juego. Cada partida elige al azar una línea de los activos.</p>
-            <ul class="rep-list">
-              {reps.map((r) => {
-                const on = !disabled.includes(r.id);
-                return (
-                  <li class={`rep ${on ? '' : 'off'}`}>
-                    <div class="rep-main">
-                      <Toggle id={`rep-${r.id}`} checked={on} label={`Entrenar ${r.name}`} onChange={(v) => onToggle(r.id, v)} />
-                      <PieceDot color={r.color} />
-                      <div class="rep-id">
-                        <span class="rep-name">{r.name}</span>
-                        <span class="rep-meta">{r.color === 'w' ? 'Blancas' : 'Negras'} · {r.lines.length} {r.lines.length === 1 ? 'línea' : 'líneas'}</span>
-                      </div>
-                      <button type="button" class="icon-btn" aria-label="Ver líneas" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
-                        <span class={`chev ${open === r.id ? 'open' : ''}`}><Icon name="chevron" size={18} /></span>
-                      </button>
-                    </div>
-                    {open === r.id && (
-                      <ol class="line-preview full">
-                        {r.lines.map((l) => <li><span class="lp-event">{l.event}</span><span class="lp-name">{lineName(l) || 'Sin nombre'}</span><span class="lp-len">{Math.ceil(l.uci.split(' ').length / 2)} jug.</span></li>)}
-                      </ol>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </>
+          <LineManager worldId={world.id} reps={reps} picks={picks} onChange={onPicks} toast={toast} />
         )}
       </section>
 

@@ -6,7 +6,7 @@
     "build": "node build.mjs",
     "dev": "node build.mjs && esbuild dev/server.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.cjs && node .dev/server.cjs",
     "typecheck": "tsc -p .",
-    "test": "esbuild tests/server.test.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.test.cjs && node .dev/server.test.cjs"
+    "test": "esbuild tests/server.test.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.test.cjs && node .dev/server.test.cjs && esbuild tests/picks.test.ts --bundle --platform=node --format=cjs --outfile=.dev/picks.test.cjs && node .dev/picks.test.cjs"
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {

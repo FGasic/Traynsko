@@ -5,7 +5,11 @@ Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el 
 ## Entrar y entrenar
 
 - **Portada** (pulsando el título): solo los repertorios que ya abriste en este dispositivo. Para otro, basta su clave: la clave dice a qué repertorio (o repertorios) da acceso, así que la portada nunca muestra el catálogo.
-- **Biblioteca**: todos los repertorios visibles, con los capítulos del que tienes abierto (activar o desactivar). Los demás se abren con su clave.
+- **Biblioteca**: las líneas del repertorio abierto y, debajo, los demás repertorios visibles (se abren con su clave).
+  - Cada jugador elige qué líneas entrena (por línea, por conjunto o por capítulo) y las agrupa en **conjuntos** propios: se crean, renombran, ordenan, pliegan (queda solo el título) y se llenan arrastrando cada línea por su asa (ratón o dedo, con desplazamiento automático) o desde su menú ⋯.
+  - **Buscar** por nombre o por jugada, con letras españolas o inglesas y número opcional (`12.Ae3`, `12.Be3`, `2...Cf6`, `Cd7` encuentra `Nbd7`). Sobre el resultado: *Entrenar solo estas*, activar, desactivar o agrupar.
+  - El entrenamiento usa solo las líneas activas; el tablero indica cuántas hay cuando no son todas. Las líneas nuevas que suba el maestro entran activas.
+  - La selección se identifica por las jugadas de cada línea (no por el capítulo ni el nombre): sobrevive a renombrar o volver a subir un capítulo. Se guarda en el servidor por persona y repertorio (cuenta de Lichess o nombre) y en el dispositivo, así que es la misma en el móvil y en el ordenador.
 - Al abrir un repertorio la partida no empieza sola: el tablero espera a **Comenzar partida**. El engranaje, en la esquina del tablero, permite ajustar antes la fuerza del bot, el color (el del repertorio o el contrario) y el ritmo.
 - Con el color contrario repites las respuestas de la línea mientras tu repertorio juega solo; no se ganan emblemas.
 - Salir de una partida en curso (otro repertorio, la Sala) pide confirmación.
@@ -48,6 +52,7 @@ python3 qa_layout.py /tmp/qa   # móviles, tabletas y escritorio, en vertical y 
 python3 qa_hint.py   /tmp/qa   # la flecha de ayuda desaparece cuando debe
 python3 qa_flow.py   /tmp/qa   # «Comenzar partida», engranaje, color contrario, portada, Biblioteca, claves
 python3 qa_users.py  /tmp/qa   # Usuarios: perfil, bloqueo por persona, repertorios privados
+python3 qa_library.py /tmp/qa  # Biblioteca: conjuntos, arrastrar (ratón y dedo), búsqueda por jugada, solo estas, otro dispositivo
 ```
 
 Cuentas y emblemas, con Lichess simulado (el código devuelto se toma como nombre de usuario):
