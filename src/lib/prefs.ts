@@ -15,6 +15,8 @@ export interface Settings {
   boardTheme: 'nogal' | 'torneo' | 'pizarra' | 'imperio';
   sound: boolean;
   coords: boolean;
+  /** Play the repertoire's side, or the other one (the user plays the line's replies). */
+  colorMode: 'rep' | 'opposite';
   lastLineId?: string;
   /** repertoire ids the player switched off, per world */
   disabledReps: Record<string, string[]>;
@@ -33,10 +35,16 @@ export const DEFAULT_SETTINGS: Settings = {
   boardTheme: 'imperio',
   sound: true,
   coords: true,
+  colorMode: 'rep',
   disabledReps: {},
 };
 
+/** Quick time controls (minutes + increment in seconds). */
+export const TIME_PRESETS: [number, number][] = [[3, 2], [5, 3], [10, 5], [15, 10], [25, 10], [45, 15], [90, 30]];
+
 export interface WorldSession { token: string; world: PublicWorld; name: string; asMaster?: boolean }
+/** A repertoire this device has entered before. `stale`: its key changed, it needs the new one. */
+export interface KnownWorld extends WorldSession { stale?: boolean }
 /** Lichess account on this device (the token is signed by the Traynsko server, not a Lichess token). */
 export interface UserSession { token: string; id: string; name: string }
 
@@ -59,6 +67,14 @@ export const prefs = {
   saveSettings: (s: Settings) => put('settings', s),
   session: () => get<WorldSession | null>('session', null),
   saveSession: (s: WorldSession | null) => put('session', s),
+  /** Repertoires entered on this device, most recent first (shown on the cover). */
+  known: (): KnownWorld[] => {
+    const list = get<KnownWorld[] | null>('known', null);
+    if (list) return list;
+    const cur = get<WorldSession | null>('session', null);   // before the cover existed: only the open one
+    return cur ? [cur] : [];
+  },
+  saveKnown: (list: KnownWorld[]) => put('known', list),
   adminToken: () => get<string | null>('admin', null),
   saveAdminToken: (t: string | null) => put('admin', t),
   user: () => get<UserSession | null>('user', null),

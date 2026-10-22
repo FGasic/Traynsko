@@ -39,6 +39,7 @@ export function fitBoard(el: HTMLElement) {
   b = Math.floor((Math.max(min, Math.min(max, b)) * dpr) / 8) * 8 / dpr;
   b = Math.round(b * 1000) / 1000;
   if (Math.abs(px(el.style.getPropertyValue('--board')) - b) > 0.01) el.style.setProperty('--board', `${b}px`);
+  el.classList.toggle('small-board', b < 280);   // overlays on the board (start button, gear) shrink with it
   // stacked: strips and panel share the board's edges, unless the height made the board clearly narrower than the screen
   const panel = mode === 'stacked' && W - b > 32 ? Math.max(b, Math.min(W, 440)) : b;
   if (Math.abs(px(el.style.getPropertyValue('--panel')) - panel) > 0.01) el.style.setProperty('--panel', `${panel}px`);

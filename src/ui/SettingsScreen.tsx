@@ -1,13 +1,12 @@
 import { useState } from 'preact/hooks';
 import { Icon, Segmented, Toggle } from './parts';
 import { sound } from '../lib/sound';
-import type { Settings, UserSession } from '../lib/prefs';
+import { TIME_PRESETS as PRESETS, type Settings, type UserSession } from '../lib/prefs';
 import { api } from '../lib/api';
 import { lichessProfile } from '../lib/lichess';
 import type { PublicWorld } from '../../shared/types';
 import { Emblem } from './Emblem';
 
-const PRESETS: [number, number][] = [[3, 2], [5, 3], [10, 5], [15, 10], [25, 10], [45, 15], [90, 30]];
 const THEMES: { id: Settings['boardTheme']; label: string }[] = [
   { id: 'imperio', label: 'Imperio' },
   { id: 'nogal', label: 'Nogal' },
@@ -45,7 +44,7 @@ export function SettingsScreen(props: Props) {
         <div>
           <span class="eyebrow">Este dispositivo</span>
           <h1>Ajustes</h1>
-          <p class="lede">Los cambios se aplican a la próxima línea. Una partida en curso no se toca.</p>
+          <p class="lede">Los cambios se aplican a la próxima partida. Una partida en curso no se toca.</p>
         </div>
         <button type="button" class="master-star inline" aria-label="Acceso del maestro" title="Acceso del maestro" onClick={onMaster}>★</button>
       </header>
@@ -107,6 +106,15 @@ export function SettingsScreen(props: Props) {
         <p class="help">
           {s.startMode === 'start' ? 'El tablero aparece en la posición inicial y juegas la línea completa.' :
             'El tablero aparece ya en esa posición, con las jugadas anteriores en la lista.'}
+        </p>
+      </section>
+
+      <section class="panel settings">
+        <h2 class="section-title">Tu color</h2>
+        <Segmented id="color-mode" value={s.colorMode} options={[{ value: 'rep', label: 'El del repertorio' }, { value: 'opposite', label: 'El contrario' }]} onChange={(v) => onUpdate({ colorMode: v })} />
+        <p class="help">
+          {s.colorMode === 'rep' ? 'Juegas el lado de tu repertorio; el rival responde con la línea.' :
+            'Juegas el otro lado: repites las respuestas de la línea mientras tu repertorio juega solo. Así practicas contra tus propias jugadas. Con este color no se ganan emblemas.'}
         </p>
       </section>
 

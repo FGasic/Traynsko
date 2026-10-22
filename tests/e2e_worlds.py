@@ -36,12 +36,13 @@ with sync_playwright() as p:
     page.get_by_role('button', name='Salir de la Sala').click(); page.wait_for_timeout(800)
     page.screenshot(path=f'{SHOTS}/w05-portal.png')
     # student enters
-    page.locator('.world-card', has_text='Benko Gambit').click(); page.wait_for_timeout(300)
-    page.fill('#gate-name', 'Ana Pérez'); page.fill('#gate-pass', 'mal'); page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(400)
+    log('portal lists repertoires (should be 0):', page.locator('.world-card').count())
+    page.fill('#key-name', 'Ana Pérez'); page.fill('#key-pass', 'mal'); page.locator('.key-form').get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(400)
     log('bad world pw ->', page.locator('.form-error').inner_text())
-    page.fill('#gate-pass', 'BENKO2026'); page.screenshot(path=f'{SHOTS}/w06-gate.png')
-    page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1500)
+    page.fill('#key-pass', 'BENKO2026'); page.screenshot(path=f'{SHOTS}/w06-gate.png')
+    page.locator('.key-form').get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1500)
     page.screenshot(path=f'{SHOTS}/w07-train.png')
+    page.locator('.train .start-btn').click(); page.wait_for_timeout(600)
     def sq(s):
         box = page.locator('.train cg-board').bounding_box(); w = box['width']/8
         return box['x'] + (ord(s[0])-97+.5)*w, box['y'] + (8-int(s[1])+.5)*w
@@ -76,16 +77,16 @@ with sync_playwright() as p:
     page.locator('.tab', has_text='Partidas').click(); page.wait_for_timeout(1200)
     log('after pw change:', page.locator('.gate-body .notice').inner_text() if page.locator('.gate-body .notice').count() else 'NO NOTICE', '| gate open:', page.locator('#gate-pass').count())
     page.screenshot(path=f'{SHOTS}/w14-kicked.png')
-    page.fill('#gate-pass', 'benko-pago'); page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1200)
+    page.fill('#gate-pass', 'benko-pago'); page.locator('.sheet').get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1200)
     log('re-entered:', page.locator('.world-badge').inner_text())
     # mobile portal & train & viewer
     m = b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, has_touch=True, is_mobile=True)
     mp = m.new_page(); mp.on('pageerror', lambda e: errors.append(str(e)))
     mp.goto(BASE); mp.wait_for_timeout(1200)
     mp.screenshot(path=f'{SHOTS}/m01-portal.png')
-    mp.locator('.world-card', has_text='Benko Gambit').click(); mp.fill('#gate-name', 'Luis'); mp.fill('#gate-pass', 'benko-pago')
+    mp.fill('#key-name', 'Luis'); mp.fill('#key-pass', 'benko-pago')
     mp.screenshot(path=f'{SHOTS}/m02-gate.png')
-    mp.get_by_role('button', name='Entrar', exact=True).click(); mp.wait_for_timeout(1500)
+    mp.locator('.key-form').get_by_role('button', name='Entrar', exact=True).click(); mp.wait_for_timeout(1500)
     mp.screenshot(path=f'{SHOTS}/m03-train.png')
     log('mobile scrollWidth', mp.evaluate('document.documentElement.scrollWidth'))
     b.close()

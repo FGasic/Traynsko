@@ -18,7 +18,58 @@ const js = await build({
 const code = js.outputFiles[0].text;
 const cssSrc = ['node_modules/chessground/assets/chessground.base.css', 'assets/pieces-centered.css', 'src/styles.css']
   .map((f) => readFileSync(f, 'utf8')).join('\n');
-const css = (await transform(cssSrc, { loader: 'css', minify: true })).code;
+
+/**
+ * Touch screens keep :hover on whatever was tapped last (a board square, a button), which leaves stray highlights.
+ * Every :hover selector is moved into @media (hover: hover), so it only applies where a real pointer can hover.
+ * Selector lists are split, so `.a:hover, .a.sel` keeps `.a.sel` for everyone.
+ */
+function hoverOnly(src) {
+  const text = src.replace(/\/\*[\s\S]*?\*\//g, '');
+  const splitTop = (sel) => {
+    const out = []; let depth = 0, cur = '';
+    for (const ch of sel) {
+      if (ch === '(' || ch === '[') depth++;
+      if (ch === ')' || ch === ']') depth--;
+      if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; } else cur += ch;
+    }
+    if (cur.trim()) out.push(cur.trim());
+    return out;
+  };
+  const walk = (css) => {
+    let out = '', i = 0;
+    while (i < css.length) {
+      const open = css.indexOf('{', i);
+      if (open < 0) { out += css.slice(i); break; }
+      const prelude = css.slice(i, open);
+      let depth = 1, j = open + 1, quote = null;
+      for (; j < css.length && depth > 0; j++) {
+        const ch = css[j];
+        if (quote) { if (ch === quote && css[j - 1] !== '\\') quote = null; continue; }
+        if (ch === '"' || ch === "'") quote = ch;
+        else if (ch === '{') depth++;
+        else if (ch === '}') depth--;
+      }
+      const body = css.slice(open + 1, j - 1);
+      const head = prelude.trim();
+      if (head.startsWith('@')) {
+        out += /^@(media|supports|container|layer)\b/.test(head) ? `${head}{${walk(body)}}` : `${head}{${body}}`;
+      } else if (head.includes(':hover')) {
+        const parts = splitTop(head);
+        const hov = parts.filter((x) => x.includes(':hover')), rest = parts.filter((x) => !x.includes(':hover'));
+        if (rest.length) out += `${rest.join(',')}{${body}}`;
+        out += `@media (hover:hover){${hov.join(',')}{${body}}}`;
+      } else {
+        out += `${head}{${body}}`;
+      }
+      i = j;
+    }
+    return out;
+  };
+  return walk(text);
+}
+const css = (await transform(hoverOnly(cssSrc), { loader: 'css', minify: true })).code;
+if (/:hover/.test(css.replace(/@media \(hover:\s?hover\)\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, ''))) throw new Error('a :hover rule escaped the hover-only media query');
 const preload = ['cinzel-latin-800-normal.woff2', 'alegreya-sans-latin-400-normal.woff2'].map((f) => `<link rel="preload" href="/fonts/${f}" as="font" type="font/woff2" crossorigin>`).join('\n');
 // Self-hosted fonts (no third-party requests): Cinzel for display, Alegreya Sans for text.
 mkdirSync(`${out}/fonts`, { recursive: true });

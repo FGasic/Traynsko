@@ -44,6 +44,8 @@ export const api = {
   health: () => call<{ ok: boolean; db: boolean; master: boolean }>('GET', 'health'),
   worlds: () => call<{ worlds: PublicWorld[] }>('GET', 'worlds').then((r) => r.worlds),
   enter: (world: string, password: string) => call<{ token: string; world: PublicWorld }>('POST', 'enter', { world, password }),
+  /** Enter with only the key: every active repertoire it opens. */
+  enterWithKey: (password: string) => call<{ entries: { token: string; world: PublicWorld }[] }>('POST', 'enter', { password }).then((r) => r.entries),
   session: (t: string) => call<{ role: string; world?: PublicWorld }>('GET', 'session', undefined, t),
   content: (t: string) => call<{ world: PublicWorld; reps: Repertoire[] }>('GET', 'content', undefined, t),
   saveGame: (t: string, player: string, game: NewGame) => call<{ game: GameSummary }>('POST', 'games', { player, game }, t).then((r) => r.game),

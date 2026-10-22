@@ -1,6 +1,7 @@
 """Board integrity QA: pieces on the right squares and centred, across tab switches, resizes and orientation."""
 import sys, json, io, urllib.request
 from playwright.sync_api import sync_playwright
+from qa_util import make_world, new_key, new_context, enter_with_key, begin
 from PIL import Image
 import numpy as np
 
@@ -9,16 +10,10 @@ SHOTS = sys.argv[1] if len(sys.argv) > 1 else '/tmp'
 # Benko-like line, user = black
 LINE = "d2d4 g8f6 c2c4 c7c5 d4d5 b7b5 c4b5 a7a6 b5a6 g7g6 b1c3 c8a6 e2e4 a6f1 e1f1 d7d6 g1f3 f8g7 g2g3 e8g8 f1g2 b8d7".split()
 
-def api(method, path, body=None, token=None):
-    req = urllib.request.Request(BASE + '/api/' + path, method=method, data=json.dumps(body).encode() if body is not None else None,
-                                 headers={'Content-Type': 'application/json', **({'Authorization': 'Bearer ' + token} if token else {})})
-    return json.loads(urllib.request.urlopen(req).read())
+KEY = new_key('benko')
 
 def setup():
-    t = api('POST', 'admin/login', {'password': 'maestro-dev'})['token']
-    w = api('POST', 'admin/worlds', {'name': 'Benko Gambit', 'subtitle': 'Negras', 'password': 'benko1', 'emblem': 'pawn', 'hue': 30}, t)['world']
-    api('POST', f"admin/worlds/{w['id']}/reps", {'name': 'Benko Trayn 1', 'color': 'b', 'lines': [{'id': 'l1', 'event': 'Benko', 'white': 'Principal', 'black': 'Fianchetto', 'uci': ' '.join(LINE)}]}, t)
-    return w
+    return make_world('Benko Gambit', KEY, [('Benko Trayn 1', 'b', [('l1', ' '.join(LINE))])], hue=30, subtitle='Negras')
 
 # ---- checks ----
 PIECE_JS = """() => {
@@ -71,7 +66,7 @@ def check(page, label):
 
 def artwork_centering(page, label):
     """Pixel check: centre of the drawn piece vs centre of its square (start position)."""
-    page.add_style_tag(content=".train cg-board{background:#ff00ff!important;background-image:none!important}.train coords{display:none!important}.train square{background:none!important}")
+    page.add_style_tag(content=".train cg-board{background:#ff00ff!important;background-image:none!important}.train coords{display:none!important}.train square{background:none!important}.train .ready-layer{display:none!important}")
     page.wait_for_timeout(200)
     box = page.locator('.train cg-board').bounding_box()
     img = np.array(Image.open(io.BytesIO(page.screenshot(clip=box))).convert('RGB')).astype(int)
@@ -96,12 +91,12 @@ if __name__ == '__main__':
     with sync_playwright() as p:
         b = p.chromium.launch()
         for name, vp, mobile in [('desktop', {'width': 1440, 'height': 900}, False), ('phone', {'width': 390, 'height': 844}, True)]:
-            ctx = b.new_context(viewport=vp, device_scale_factor=2 if mobile else 1, is_mobile=mobile, has_touch=mobile)
+            ctx = new_context(b, vp['width'], vp['height'], touch=mobile)
             page = ctx.new_page()
             errs = []; page.on('pageerror', lambda e: errs.append(str(e)))
-            page.goto(BASE); page.wait_for_timeout(900)
-            page.locator('.world-card', has_text='Benko Gambit').first.click(); page.fill('#gate-name', 'QA'); page.fill('#gate-pass', 'benko1')
-            page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1500)
+            enter_with_key(page, KEY)
+            ok &= check(page, f'{name}: waiting to start (black)')
+            begin(page)
             ok &= check(page, f'{name}: start of line (black)')
             def sq(s):
                 box = page.locator('.train cg-board').bounding_box(); u = box['width'] / 8

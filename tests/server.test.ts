@@ -41,6 +41,18 @@ const login = (code: string, ip = '2.2.2.2') => call('POST', '/api/auth/lichess'
   r = await call('POST', '/api/enter', { world: wid, password: 'mal', name: 'Ana' }); check(r.status === 401, 'wrong world pw');
   r = await call('POST', '/api/enter', { world: wid, password: '  peon2025 ' }); check(r.status === 200, 'world pw case-insensitive');
   const tok = (r.body as any).token;
+  // key only: the key says which repertoire it opens
+  r = await call('POST', '/api/enter', { password: 'PEON2025' }, undefined, '1.1.1.9');
+  check(r.status === 200 && (r.body as any).entries.length === 1 && (r.body as any).entries[0].world.id === wid, 'enter with key only');
+  r = await call('GET', '/api/content', {}, (r.body as any).entries?.[0]?.token); check(r.status === 200, 'key-only token works');
+  r = await call('POST', '/api/enter', { password: 'nada-de-esto' }, undefined, '1.1.1.9'); check(r.status === 401 && (r.body as any).error === 'wrong_password', 'key only: wrong key');
+  r = await call('POST', '/api/enter', { password: '' }, undefined, '1.1.1.9'); check(r.status === 400, 'key only: empty key');
+  r = await call('POST', '/api/admin/worlds', { name: 'Gemelo', password: 'peon2025', emblem: 'rook', hue: 90 }, admin);
+  const twin = (r.body as any).world.id;
+  r = await call('POST', '/api/enter', { password: 'peon2025' }, undefined, '1.1.1.9'); check((r.body as any).entries?.length === 2, 'key opening two repertoires returns both');
+  await call('PATCH', `/api/admin/worlds/${twin}`, { active: false }, admin);
+  r = await call('POST', '/api/enter', { password: 'peon2025' }, undefined, '1.1.1.9'); check((r.body as any).entries?.length === 1, 'hidden repertoire not opened by key');
+  await call('DELETE', `/api/admin/worlds/${twin}`, {}, admin);
   r = await call('GET', '/api/content', {}, tok); check(r.status === 200 && (r.body as any).reps[0].lines.length === 1, 'content');
   r = await call('GET', '/api/admin/overview', {}, tok); check(r.status === 403, 'student cannot admin');
   const game = { repId: 'r', repName: 'Blancas', lineId: lines[0].id, lineEvent: 'E', lineWhite: 'W', lineBlack: 'B', userColor: 'w', botId: 'muralla', botName: 'Muralla', botElo: 2300, result: '1-0', termination: 'Jaque mate', timeControl: '600+5', sans: ['d4', 'Nf6'], clocks: [600000, 598000], linePlies: 2, lineErrors: 1 };

@@ -49,12 +49,13 @@ with sync_playwright() as p:
     page.screenshot(path=f'{SHOTS}/a01-portal-guest.png')
 
     # 1) guest plays with one mistake and saves under "Franco"
-    page.locator('.world-card', has_text='Mundo Prueba').click(); page.wait_for_timeout(300)
+    page.fill('#key-name', 'Franco'); page.fill('#key-pass', 'prueba1')
     page.screenshot(path=f'{SHOTS}/a02-gate-guest.png')
-    page.fill('#gate-name', 'Franco'); page.fill('#gate-pass', 'prueba1'); page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1300)
-    page.locator('.tab', has_text='Capítulos').click(); page.wait_for_timeout(300)
+    page.locator('.key-form').get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1300)
+    page.locator('.tab', has_text='Biblioteca').click(); page.wait_for_timeout(300)
     page.get_by_role('switch', name='Entrenar Benko Negras').click(); page.wait_for_timeout(300)
     page.locator('.tab', has_text='Entrenar').click(); page.wait_for_timeout(800)
+    page.locator('.train .start-btn').click(); page.wait_for_timeout(600)
     play_line(page, CATALAN, wrong_first=True); page.wait_for_timeout(1500)
     page.get_by_role('button', name='Abandonar').click(); page.get_by_role('button', name='Sí, abandonar').click(); page.wait_for_timeout(900)
     log('guest medal note:', page.locator('.medal-note').count())
@@ -89,6 +90,7 @@ with sync_playwright() as p:
     # 3) perfect line from move 1 with account: medal
     page.locator('.tab', has_text='Entrenar').click(); page.wait_for_timeout(500)
     if page.get_by_role('button', name='Siguiente línea').count(): page.get_by_role('button', name='Siguiente línea').first.click(); page.wait_for_timeout(800)
+    if page.locator('.train .start-btn').count(): page.locator('.train .start-btn').click(); page.wait_for_timeout(600)
     log('player strip:', page.locator('.player.bottom .player-name').inner_text())
     play_line(page, CATALAN); page.wait_for_timeout(400)
     log('banner:', page.locator('.banner').inner_text() if page.locator('.banner').count() else '-')
@@ -121,15 +123,16 @@ with sync_playwright() as p:
     mp.locator('.tab', has_text='Ajustes').click(); mp.wait_for_timeout(300)
     mp.get_by_role('button', name='Cambiar de repertorio').click(); mp.wait_for_timeout(900)
     mp.screenshot(path=f'{SHOTS}/m02-portal-signed.png')
-    mp.locator('.world-card', has_text='Mundo Prueba').click(); mp.wait_for_timeout(300)
-    mp.screenshot(path=f'{SHOTS}/m03-gate-signed.png')
-    mp.locator('.sheet').get_by_role('button', name='Volver').click()
+    log('cover over the repertoire:', mp.locator('.portal-layer').count(), '| cards:', mp.locator('.portal-layer .wc-name').all_inner_texts())
+    mp.locator('.portal-layer .world-card', has_text='Mundo Prueba').click(); mp.wait_for_timeout(600)
+    log('card continues the open repertoire:', mp.locator('.portal-layer').count() == 0)
+    # forget it, sign out and come back with the key: the door is the key form
+    mp.locator('.topbar .brand').click(); mp.wait_for_timeout(400)
+    mp.locator('.portal-layer li.known', has_text='Mundo Prueba').locator('.wc-forget').click(); mp.locator('.wc-confirm button', has_text='Quitar').click(); mp.wait_for_timeout(500)
     mp.locator('.account-bar').get_by_role('button', name='Salir').click(); mp.wait_for_timeout(300)
-    mp.locator('.world-card', has_text='Mundo Prueba').click(); mp.wait_for_timeout(300)
     mp.screenshot(path=f'{SHOTS}/m04-gate-guest.png')
-    # sign in from the door: comes back to the same door
-    mp.locator('.sheet').get_by_role('button', name='Entrar con Lichess').click(); mp.wait_for_timeout(1800)
-    log('door reopened after login:', mp.locator('.gate-account').inner_text().replace('\n', ' ') if mp.locator('.gate-account').count() else 'NO')
+    mp.locator('.account-bar').get_by_role('button', name='Entrar con Lichess').click(); mp.wait_for_timeout(1800)
+    log('back from Lichess on the cover, signed in:', mp.locator('.account-bar.signed').count() == 1, '| key form for the account:', 'Jugarás como' in mp.locator('.key-form').inner_text())
 
     # 5) account deletion
     page.locator('.tab', has_text='Ajustes').click(); page.wait_for_timeout(300)

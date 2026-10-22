@@ -290,13 +290,20 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
     if (a === 'enter' && M === 'POST') {
       if (!keys) fail(503, 'not_configured', 'Falta configurar la clave maestra en el servidor.');
       await limit(kv, 'enter', req.ip, 20, 600);
+      const opens = (w: WorldDoc, given: string) => { const real = decrypt(w.pw, keys!.enc); return real !== null && sameText(given, normPassword(real)); };
+      const entry = (w: WorldDoc) => ({ token: signToken({ k: 'w', w: w.id, v: w.pwv, iat: Date.now() }, keys!.sign), world: toPublic(w) });
+      if (req.body?.world === undefined || req.body?.world === null || req.body?.world === '') {
+        // Only the key: it says which repertoire(s) it opens, so the cover never has to list them all.
+        const given = normPassword(str(req.body?.password, 200, 'la clave'));
+        const matches = (await allWorlds(kv)).filter((w) => w.active && opens(w, given));
+        if (!matches.length) fail(401, 'wrong_password', 'Esa clave no abre ningún repertorio.');
+        return { status: 200, body: { entries: matches.map(entry) } };
+      }
       const w = await loadWorld(kv, str(req.body?.world, 40, 'repertorio'));
       if (!w.active) fail(404, 'world_not_found', 'Ese repertorio no está disponible.');
       const given = normPassword(str(req.body?.password, 200, 'la clave'));
-      const real = decrypt(w.pw, keys!.enc);
-      if (real === null || !sameText(given, normPassword(real))) fail(401, 'wrong_password', 'Clave incorrecta.');
-      const token = signToken({ k: 'w', w: w.id, v: w.pwv, iat: Date.now() }, keys!.sign);
-      return { status: 200, body: { token, world: toPublic(w) } };
+      if (!opens(w, given)) fail(401, 'wrong_password', 'Clave incorrecta.');
+      return { status: 200, body: entry(w) };
     }
 
     if (a === 'admin' && b === 'login' && M === 'POST') {

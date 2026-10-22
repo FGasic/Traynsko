@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import type { Bot } from '../lib/bots';
 
-export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external';
+export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external' | 'library' | 'clock' | 'play' | 'lock' | 'back';
 
 const PATHS: Record<IconName, string> = {
   train: 'M4 4h16v16H4z M4 12h16 M12 4v16 M4 4l8 8 M12 12l8 8',
@@ -27,7 +27,31 @@ const PATHS: Record<IconName, string> = {
   login: 'M14 4h5v16h-5 M9 8l4 4-4 4 M13 12H4',
   logout: 'M10 4H5v16h5 M15 8l4 4-4 4 M19 12h-9',
   external: 'M14 4h6v6 M20 4l-9 9 M18 14v6H4V6h6',
+  library: 'M4.5 4h3.5v16H4.5z M10 4h3.5v16H10z M15.6 5.4l3.3-.9 3.6 15-3.3.9z M4.5 8h3.5 M10 8h3.5',
+  clock: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17z M12 7.5V12l3 2',
+  play: 'M8 5.5l10.5 6.5L8 18.5z',
+  lock: 'M6 11h12v9H6z M8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+  back: 'M15 6l-6 6 6 6',
 };
+
+/** Cog outline (eight teeth) with a hole, drawn once. */
+const GEAR = (() => {
+  const teeth = 8, rOut = 10.4, rIn = 8, pts: string[] = [];
+  for (let i = 0; i < teeth; i++) {
+    const a = (i / teeth) * Math.PI * 2, w = Math.PI / teeth;
+    const at = (ang: number, r: number) => `${(12 + r * Math.cos(ang)).toFixed(2)} ${(12 + r * Math.sin(ang)).toFixed(2)}`;
+    pts.push(at(a - w * 0.62, rIn), at(a - w * 0.42, rOut), at(a + w * 0.42, rOut), at(a + w * 0.62, rIn));
+  }
+  return `M${pts.join(' L')}Z M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z`;
+})();
+
+export function GearIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg class="icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true">
+      <path d={GEAR} />
+    </svg>
+  );
+}
 
 export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return (

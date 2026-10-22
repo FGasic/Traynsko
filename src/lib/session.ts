@@ -64,6 +64,8 @@ export class Session {
   lineIdx = 0;
   preplied = 0;
   phase: Phase = 'line';
+  /** False while the board waits for «Comenzar partida»: nothing moves and no clock runs. */
+  started = false;
   played: PlayedMove[] = [];
   mistakes = 0;
   attempts = 0;
@@ -98,13 +100,15 @@ export class Session {
 
   /** Kick off: play the opponent's line move if it's their turn, or go straight to the game. */
   start() {
+    if (this.started || this.destroyed) return;
+    this.started = true;
     this.engine?.newGame();
     if (this.lineIdx >= this.lineMoves.length) this.enterBotPhase();
     else if (this.chess.turn() !== this.cfg.userColor) this.later(() => this.playBook(), 600);
     this.ev.change();
   }
 
-  get userTurn() { return this.phase !== 'over' && this.chess.turn() === this.cfg.userColor && !this.thinking; }
+  get userTurn() { return this.started && this.phase !== 'over' && this.chess.turn() === this.cfg.userColor && !this.thinking; }
   get expected(): string | undefined { return this.phase === 'line' ? this.lineMoves[this.lineIdx] : undefined; }
   get linePlies() { return Math.min(this.lineIdx, this.lineMoves.length); }
 

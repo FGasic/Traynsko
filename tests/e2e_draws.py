@@ -39,9 +39,9 @@ with sync_playwright() as p:
     page.get_by_role('button', name='Añadir a Finales').click(); page.wait_for_timeout(700)
     page.get_by_role('button', name='Todos los repertorios').click(); page.wait_for_timeout(300)
     page.get_by_role('button', name='Salir de la Sala').click(); page.wait_for_timeout(600)
-    page.locator('.world-card', has_text='Finales').click()
-    page.fill('#gate-name', 'Prueba'); page.fill('#gate-pass', 'finales1'); page.get_by_role('button', name='Entrar', exact=True).click()
+    page.fill('#key-name', 'Prueba'); page.fill('#key-pass', 'finales1'); page.locator('.key-form').get_by_role('button', name='Entrar', exact=True).click()
     page.wait_for_timeout(2500)
+    page.locator('.train .start-btn').click(); page.wait_for_timeout(700)
 
     # A) the player offers a draw in an equal rook ending: accepted at once
     play_line(page)

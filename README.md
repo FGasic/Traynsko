@@ -2,6 +2,14 @@
 
 Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el reloj en marcha y, al terminarla, juegas la posición contra un bot que corre en tu propio dispositivo (Stockfish). Cada partida queda en tu registro, con visor jugada a jugada.
 
+## Entrar y entrenar
+
+- **Portada** (pulsando el título): solo los repertorios que ya abriste en este dispositivo. Para otro, basta su clave: la clave dice a qué repertorio (o repertorios) da acceso, así que la portada nunca muestra el catálogo.
+- **Biblioteca**: todos los repertorios visibles, con los capítulos del que tienes abierto (activar o desactivar). Los demás se abren con su clave.
+- Al abrir un repertorio la partida no empieza sola: el tablero espera a **Comenzar partida**. El engranaje, en la esquina del tablero, permite ajustar antes la fuerza del bot, el color (el del repertorio o el contrario) y el ritmo.
+- Con el color contrario repites las respuestas de la línea mientras tu repertorio juega solo; no se ganan emblemas.
+- Salir de una partida en curso (otro repertorio, la Sala) pide confirmación.
+
 ## Tablas contra el bot
 
 - Puedes ofrecer tablas en la partida. El bot acepta en finales simplificados o posiciones sin progreso si no está claramente mejor; al principio de una partida con piezas solo acepta si está peor.
@@ -27,9 +35,11 @@ npm run typecheck
 Pruebas visuales (con `npm run dev` en marcha; requieren Python con Playwright):
 
 ```bash
-python3 tests/qa_board.py  /tmp/qa   # piezas exactas tras cambiar de pestaña, redimensionar y girar
-python3 tests/qa_layout.py /tmp/qa   # móviles, tabletas y escritorio, en vertical y horizontal
-python3 tests/qa_hint.py             # la flecha de ayuda desaparece cuando debe
+cd tests
+python3 qa_board.py  /tmp/qa   # piezas exactas tras cambiar de pestaña, redimensionar y girar
+python3 qa_layout.py /tmp/qa   # móviles, tabletas y escritorio, en vertical y horizontal
+python3 qa_hint.py   /tmp/qa   # la flecha de ayuda desaparece cuando debe
+python3 qa_flow.py   /tmp/qa   # «Comenzar partida», engranaje, color contrario, portada, Biblioteca, claves
 ```
 
 Cuentas y emblemas, con Lichess simulado (el código devuelto se toma como nombre de usuario):

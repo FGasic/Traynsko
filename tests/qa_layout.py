@@ -3,10 +3,10 @@ For every viewport: everything on the training screen fits without scrolling and
 sideways, the board is square and aligned with the player strips, and the controls of each phase are reachable.
 Saves screenshots (and a contact sheet) to the folder given as first argument. Exit code 1 on failure.
 Run against the dev server (npm run dev)."""
-import sys, os, json, random, urllib.request
+import sys, os
 from playwright.sync_api import sync_playwright
+from qa_util import make_world, new_key, new_context, enter_with_key, begin, play as play_on
 
-BASE = 'http://localhost:8790'
 OUT = sys.argv[1] if len(sys.argv) > 1 else '/tmp/qa-layout'
 ONLY = sys.argv[2].split(',') if len(sys.argv) > 2 else None
 os.makedirs(OUT, exist_ok=True)
@@ -35,17 +35,11 @@ VIEWPORTS = [
 SCROLL_OK = {'phone-320'}
 
 
-def api(method, path, body=None, token=None):
-    req = urllib.request.Request(BASE + '/api/' + path, method=method, data=json.dumps(body).encode() if body is not None else None,
-                                 headers={'Content-Type': 'application/json', 'x-test-ip': f'10.9.{random.randint(0, 255)}.{random.randint(1, 254)}', **({'Authorization': 'Bearer ' + token} if token else {})})
-    return json.loads(urllib.request.urlopen(req).read())
+KEY = new_key('layout')
 
 
 def setup():
-    t = api('POST', 'admin/login', {'password': 'maestro-dev'})['token']
-    w = api('POST', 'admin/worlds', {'name': 'Rossolimo V', 'subtitle': 'Negras', 'password': 'layout1', 'emblem': 'pawn', 'hue': 260}, t)['world']
-    api('POST', f"admin/worlds/{w['id']}/reps", {'name': 'rossoVS', 'color': 'b', 'lines': [
-        {'id': 'l1', 'event': 'Benko', 'white': 'Corta', 'black': 'QA', 'uci': ' '.join(LINE)}]}, t)
+    make_world('Rossolimo V', KEY, [('rossoVS', 'b', [('l1', ' '.join(LINE))])], hue=260, subtitle='Negras')
 
 
 MEASURE = """() => {
@@ -95,12 +89,53 @@ MEASURE = """() => {
     if (r.width && (r.bottom > tb.bottom + 0.5 || r.top < tb.top - 0.5)) out.problems.push('topbar item overflows vertically: ' + el.className);
   }
   // clipped single-line texts (ellipsis) in the status area
+  // the status bar's own content must fit in it
+  const sc = document.querySelector('.train .status-card');
+  if (sc && getComputedStyle(sc).display !== 'none') {
+    const r = sc.getBoundingClientRect();
+    for (const c of sc.querySelectorAll('.pill, .tc, .btn, .status-text')) {
+      if (getComputedStyle(c).display === 'none') continue;
+      const cr = c.getBoundingClientRect();
+      if (cr.width && (cr.right > r.right + 0.5 || cr.left < r.left - 0.5)) out.problems.push('status bar content spills: ' + c.textContent.trim().slice(0, 20));
+    }
+  }
   for (const el of document.querySelectorAll('.train .status-text, .train .pill, .train .btn, .train .player-name, .tab span')) {
     const cs = getComputedStyle(el);
     if (cs.display === 'none') continue;
     if (el.scrollWidth > el.clientWidth + 1) out.problems.push('text cut: ' + el.textContent.trim().slice(0, 30));
   }
+  // before the game: the start button and the gear sit on the board
+  const ready = document.querySelector('.train .ready-layer');
+  if (ready) {
+    const inside = (q) => { const e = document.querySelector(q); if (!e) return out.problems.push('missing ' + q); const r = e.getBoundingClientRect();
+      if (r.left < board.left - 1 || r.right > board.right + 1 || r.top < board.top - 1 || r.bottom > board.bottom + 1) out.problems.push(q + ' outside the board'); };
+    inside('.train .start-btn'); inside('.train .gear-btn');
+  }
+  // the names stay big: at least 60% of the strip height in font size, unless a long name had to shrink
+  for (const n of document.querySelectorAll('.train .player-name')) {
+    const fs = parseFloat(getComputedStyle(n).fontSize), sh = n.closest('.player').getBoundingClientRect().height;
+    if (fs < 14) out.problems.push('name too small ' + fs);
+    if (n.textContent.length <= 12 && fs < sh * 0.5) out.problems.push(`short name drawn small (${fs}px in a ${sh}px strip)`);
+  }
+  // tab labels: inside their tab and never touching the next one
+  const labels = [...document.querySelectorAll('.tabs .tab span')].filter((x) => getComputedStyle(x).display !== 'none').map((x) => x.getBoundingClientRect());
+  for (let i = 0; i < labels.length; i++) {
+    const tab = document.querySelectorAll('.tabs .tab')[i].getBoundingClientRect();
+    if (labels[i].left < tab.left - 0.5 || labels[i].right > tab.right + 0.5) out.problems.push('tab label wider than its tab: ' + i);
+    if (i && labels[i].left < labels[i - 1].right + 2) out.problems.push('tab labels touch: ' + i);
+  }
+  const tc = document.querySelector('.train .tc');
+  if (tc && getComputedStyle(tc).display !== 'none' && tc.scrollWidth > tc.clientWidth + 1) out.problems.push('time control cut');
   if (out.scroll > 1) out.problems.push('training screen needs scrolling: ' + out.scroll + 'px');
+  return out;
+}"""
+
+SHEET = """() => {
+  const s = document.querySelector('.sheet'); if (!s) return ['no sheet'];
+  const r = s.getBoundingClientRect(), out = [];
+  if (r.top < -0.5 || r.bottom > innerHeight + 0.5 || r.left < -0.5 || r.right > innerWidth + 0.5) out.push('sheet outside the screen');
+  if (s.scrollHeight > s.clientHeight + 1 && innerHeight > 500) out.push('sheet needs scrolling: ' + (s.scrollHeight - s.clientHeight));
+  for (const b of s.querySelectorAll('.btn, .chip, .segmented button')) if (b.scrollWidth > b.clientWidth + 1) out.push('text cut: ' + b.textContent.trim());
   return out;
 }"""
 
@@ -113,34 +148,34 @@ def main():
         b = p.chromium.launch()
         for name, w, h, touch in VIEWPORTS:
             if ONLY and name not in ONLY: continue
-            ctx = b.new_context(viewport={'width': w, 'height': h}, device_scale_factor=2 if touch else 1, is_mobile=touch and w < 1000, has_touch=touch)
-            ctx.set_extra_http_headers({'x-test-ip': f'10.8.{random.randint(0, 255)}.{random.randint(1, 254)}'})  # dev server rate-limits per IP
+            ctx = new_context(b, w, h, touch=touch)
             page = ctx.new_page()
             errs = []
             page.on('pageerror', lambda e: errs.append(str(e)))
-            page.goto(BASE); page.wait_for_timeout(700)
-            page.locator('.world-card', has_text='Rossolimo V').first.click()
-            page.fill('#gate-name', 'Franco Gasic'); page.fill('#gate-pass', 'layout1')
-            page.get_by_role('button', name='Entrar', exact=True).click(); page.wait_for_timeout(1700)
-
-            def sq(s):
-                box = page.locator('.train cg-board').bounding_box(); u = box['width'] / 8
-                return box['x'] + (7 - (ord(s[0]) - 97) + .5) * u, box['y'] + (int(s[1]) - 1 + .5) * u
+            enter_with_key(page, KEY, name='Franco Gasic')
 
             def play(uci, wait=700):
-                page.mouse.click(*sq(uci[:2])); page.wait_for_timeout(60); page.mouse.click(*sq(uci[2:4])); page.wait_for_timeout(wait)
+                play_on(page, uci, wait)
 
             def report(stage):
                 nonlocal ok
                 m = page.evaluate(MEASURE)
                 bad = m['problems']
-                if name in SCROLL_OK: bad = [x for x in bad if 'below tab bar' not in x and 'needs scrolling' not in x]
+                if name in SCROLL_OK: bad = [x for x in bad if 'below tab bar' not in x and 'needs scrolling' not in x and 'drawn small' not in x]
                 print(('OK   ' if not bad else 'FAIL ') + f"{name:13} {stage:10} layout={m['layout'] or '?':8} board={m['board']}px" + ('' if not bad else ' -> ' + '; '.join(bad[:5])), flush=True)
                 ok &= not bad
                 f = f'{OUT}/{name}-{stage}.png'
                 page.screenshot(path=f)
                 shots.append((name, stage, f))
 
+            report('ready')
+            page.locator('.train .gear-btn').click(); page.wait_for_timeout(300)
+            bad = page.evaluate(SHEET)
+            print(('OK   ' if not bad else 'FAIL ') + f"{name:13} options" + ('' if not bad else ' -> ' + '; '.join(bad[:4])), flush=True)
+            ok &= not bad
+            f = f'{OUT}/{name}-options.png'; page.screenshot(path=f); shots.append((name, 'options', f))
+            page.locator('.sheet .icon-btn[aria-label="Cerrar"]').click(); page.wait_for_timeout(250)
+            begin(page)
             # line phase with the hint button showing
             for _ in range(3): play('e7e6', 400)
             report('hint')
