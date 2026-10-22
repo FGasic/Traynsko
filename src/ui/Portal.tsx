@@ -144,13 +144,13 @@ function KeyForm({ compact, user, onEntered }: { compact: boolean; user: UserSes
     if (!password.trim()) { setErr('Escribe la clave del repertorio.'); pwRef.current?.focus(); return; }
     setBusy(true); setErr(null);
     try {
-      const entries = await api.enterWithKey(password);
+      const entries = await api.enterWithKey(password, user ? undefined : name.trim());
       if (!user) prefs.saveLastName(name.trim());
       setPassword('');
       setBusy(false);
       onEntered(entries, user ? user.name : name.trim());
     } catch (e: any) {
-      setErr(e instanceof ApiError && e.code === 'wrong_password' ? 'Esa clave no abre ningún repertorio. Revísala y vuelve a probar.' : e.message);
+      setErr(e instanceof ApiError && e.code === 'wrong_password' ? 'Esa clave no abre ningún repertorio. Revísala y vuelve a probar.' : e.message);   // blocked / account required come with their own message
       setBusy(false);
       pwRef.current?.select();
     }
@@ -218,7 +218,7 @@ export function EnterSheet({ world, message, onClose, onEnter, user, signingIn, 
     if (!password.trim()) { setErr('Escribe la clave del repertorio.'); pwRef.current?.focus(); return; }
     setBusy(true); setErr(null);
     try {
-      const r = await api.enter(world.id, password);
+      const r = await api.enter(world.id, password, user ? undefined : name.trim());
       if (!user) prefs.saveLastName(name.trim());
       onEnter(r.token, r.world, user ? user.name : name.trim());
     } catch (e: any) {

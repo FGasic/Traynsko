@@ -18,12 +18,23 @@ export interface KV {
   srem(key: string, member: string): Promise<void>;
   /** increment and set the TTL on first increment; returns the new value */
   hit(key: string, ttlSec: number): Promise<number>;
+  /** hash of JSON values (one field per member) */
+  hget<T>(key: string, field: string): Promise<T | null>;
+  hset(key: string, field: string, value: unknown): Promise<void>;
+  hgetall<T>(key: string): Promise<Record<string, T>>;
+  hdel(key: string, field: string): Promise<void>;
 }
+
+const parse = <T>(v: unknown): T => {
+  if (typeof v !== 'string') return v as T;
+  try { return JSON.parse(v) as T; } catch { return v as unknown as T; }
+};
 
 export function memoryKV(): KV {
   const data = new Map<string, unknown>();
   const zsets = new Map<string, Map<string, number>>();
   const sets = new Map<string, Set<string>>();
+  const hashes = new Map<string, Map<string, string>>();
   const ttl = new Map<string, number>();
   const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
   const alive = (k: string) => { const t = ttl.get(k); if (t && t < Date.now()) { data.delete(k); ttl.delete(k); } };
@@ -31,7 +42,7 @@ export function memoryKV(): KV {
     async get<T>(k: string) { alive(k); return data.has(k) ? clone(data.get(k) as T) : null; },
     async mget<T>(keys: string[]) { return keys.map((k) => { alive(k); return data.has(k) ? clone(data.get(k) as T) : null; }); },
     async set(k, v) { data.set(k, clone(v)); },
-    async del(...keys) { keys.forEach((k) => { data.delete(k); zsets.delete(k); sets.delete(k); }); },
+    async del(...keys) { keys.forEach((k) => { data.delete(k); zsets.delete(k); sets.delete(k); hashes.delete(k); }); },
     async zadd(k, score, m) { if (!zsets.has(k)) zsets.set(k, new Map()); zsets.get(k)!.set(m, score); },
     async zrevrange(k, start, stop) {
       const z = [...(zsets.get(k) ?? new Map()).entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]);
@@ -49,6 +60,10 @@ export function memoryKV(): KV {
       if (n === 1) ttl.set(k, Date.now() + ttlSec * 1000);
       return n;
     },
+    async hget<T>(k: string, f: string) { const v = hashes.get(k)?.get(f); return v === undefined ? null : parse<T>(v); },
+    async hset(k, f, v) { if (!hashes.has(k)) hashes.set(k, new Map()); hashes.get(k)!.set(f, JSON.stringify(v)); },
+    async hgetall<T>(k: string) { const out: Record<string, T> = {}; for (const [f, v] of hashes.get(k) ?? []) out[f] = parse<T>(v); return out; },
+    async hdel(k, f) { hashes.get(k)?.delete(f); },
   };
 }
 
@@ -82,5 +97,14 @@ export async function redisKV(): Promise<KV> {
       if (n === 1) await r.expire(k, ttlSec);
       return n;
     },
+    async hget<T>(k: string, f: string) { const v = await r.hget(k, f); return v === null || v === undefined ? null : parse<T>(v); },
+    async hset(k, f, v) { await r.hset(k, { [f]: JSON.stringify(v) }); },
+    async hgetall<T>(k: string) {
+      const all = (await r.hgetall<Record<string, unknown>>(k)) ?? {};
+      const out: Record<string, T> = {};
+      for (const [f, v] of Object.entries(all)) out[f] = parse<T>(v);
+      return out;
+    },
+    async hdel(k, f) { await r.hdel(k, f); },
   };
 }

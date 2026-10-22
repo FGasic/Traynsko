@@ -44,10 +44,26 @@ export interface PlayerStats {
 export interface AdminWorld extends PublicWorld {
   password: string;
   active: boolean;
+  /** shown in everyone's Biblioteca (personal repertoires are not) */
+  listed: boolean;
+  /** only Lichess accounts may enter: a block can then never be dodged with another name */
+  accountOnly: boolean;
   createdAt: string;
   reps: RepMeta[];
   gameCount: number;
-  players: PlayerStats[];
+  players: (PlayerStats & { key: string })[];
+  members: Member[];
+}
+
+/** Someone who entered a repertoire. `id` is the player key: `lichess:<id>` for accounts, the normalised name for guests. */
+export interface Member {
+  id: string;
+  kind: 'account' | 'guest';
+  name: string;
+  first: string;
+  last: string;
+  blocked?: boolean;
+  blockedAt?: string;
 }
 
 export interface GameRecord {

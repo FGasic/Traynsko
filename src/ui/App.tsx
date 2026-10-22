@@ -8,7 +8,7 @@ import { AdminRoom } from './AdminRoom';
 import { AtlasScreen } from './Atlas';
 import { Emblem } from './Emblem';
 import { Icon, type IconName } from './parts';
-import { api, ApiError, setUserToken, type NewGame } from '../lib/api';
+import { api, ApiError, setPlayerName, setUserToken, type NewGame } from '../lib/api';
 import { prefs, type KnownWorld, type Settings, type UserSession, type WorldSession } from '../lib/prefs';
 import { startLichessLogin, takeLichessReturn } from '../lib/lichess';
 import type { Medal } from '../../shared/atlas';
@@ -32,6 +32,7 @@ type View = 'portal' | 'world' | 'room';
 
 const initialUser = prefs.user();
 setUserToken(initialUser?.token ?? null);
+setPlayerName(prefs.session()?.name ?? null);
 // Read Lichess's answer before anything renders, so the address bar is clean from the first paint.
 const lichessReturn = takeLichessReturn();
 
@@ -69,6 +70,7 @@ export function App() {
   const engine = () => (engineRef.current ??= new Engine());
 
   useEffect(() => { setSoundEnabled(settings.sound); }, [settings.sound]);
+  setPlayerName(session && !session.asMaster ? session.name : null);
   useEffect(() => {
     const prime = () => { primeSound(); window.removeEventListener('pointerdown', prime, true); };
     window.addEventListener('pointerdown', prime, true);
@@ -160,7 +162,16 @@ export function App() {
 
   /** Returns true when the error was a session problem that has been handled. */
   function handleAuth(e: unknown): boolean {
-    if (!(e instanceof ApiError) || e.status !== 401) return false;
+    if (!(e instanceof ApiError)) return false;
+    if (e.status === 403 && e.code === 'access_blocked') {
+      // this person was blocked from the open repertoire: out, and off the cover
+      const wid = session?.world.id;
+      if (wid) setKnown(prefs.known().filter((k) => k.world.id !== wid));
+      leaveWorld(e.message);
+      return true;
+    }
+    if (e.status !== 401) return false;
+    if (e.code === 'account_required') { leaveWorld(e.message); return true; }
     if (e.code === 'account_expired' || e.code === 'no_account') { logout(e.message); return true; }
     if (e.code === 'admin_expired') { prefs.saveAdminToken(null); setAdminToken(null); setView(session ? 'world' : 'portal'); toast(e.message, 'bad'); return true; }
     const wid = session?.world.id;

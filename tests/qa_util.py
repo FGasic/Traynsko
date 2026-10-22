@@ -19,10 +19,10 @@ def new_key(prefix='qa'):
     return prefix + '-' + ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(8))
 
 
-def make_world(name, key, chapters, hue=210, emblem='pawn', subtitle=''):
+def make_world(name, key, chapters, hue=210, emblem='pawn', subtitle='', listed=True, account_only=False):
     """chapters: [(chapter name, 'w'|'b', [(line id, uci string), ...]), ...]"""
     t = api('POST', 'admin/login', {'password': 'maestro-dev'})['token']
-    w = api('POST', 'admin/worlds', {'name': name, 'subtitle': subtitle, 'password': key, 'emblem': emblem, 'hue': hue}, t)['world']
+    w = api('POST', 'admin/worlds', {'name': name, 'subtitle': subtitle, 'password': key, 'emblem': emblem, 'hue': hue, 'listed': listed, 'accountOnly': account_only}, t)['world']
     for cname, color, lines in chapters:
         api('POST', f"admin/worlds/{w['id']}/reps", {'name': cname, 'color': color, 'lines': [
             {'id': lid, 'event': cname, 'white': 'QA', 'black': lid, 'uci': uci} for lid, uci in lines]}, t)

@@ -1,6 +1,6 @@
 import type { KV } from './kv';
 import { decrypt, deriveKeys, encrypt, newId, normPassword, readToken, sameText, signToken, verifySecret } from './crypto';
-import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, PlayerStats, PublicWorld, RepMeta } from '../shared/types';
+import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, Member, PlayerStats, PublicWorld, RepMeta } from '../shared/types';
 import { playerKey } from '../shared/types';
 import { ACCOUNT_PREFIX, accountKey, lineFingerprint, type Medal, type UserInfo } from '../shared/atlas';
 import { lichessClient, type LichessClient } from './lichess';
@@ -11,6 +11,7 @@ export interface Req {
   query: URLSearchParams;
   auth?: string;                // Authorization header: world or master session
   user?: string;                // X-Traynsko-User header: Lichess account session
+  player?: string;              // X-Traynsko-Player header: the guest name typed on this device (URI-encoded)
   body: any;
   ip: string;
 }
@@ -25,6 +26,8 @@ interface WorldDoc {
   pw: string;        // AES-GCM encrypted password
   pwv: number;       // bumps on every password change: invalidates sessions
   active: boolean;
+  listed?: boolean;  // in the public Biblioteca (missing = yes, for repertoires created before the setting)
+  accountOnly?: boolean;
   createdAt: string;
   reps: RepMeta[];
 }
@@ -38,7 +41,8 @@ interface UserDoc {
   claims: string[];  // "worldId|guestKey" names whose old games were moved to this account
 }
 
-type Session = { k: 'w'; w: string; v: number; iat: number } | { k: 'a'; iat: number; exp: number };
+/** World session: `m` who entered (player key), `n` the guest name, `adm` issued to the master (never tracked or blocked). */
+type Session = { k: 'w'; w: string; v: number; iat: number; m?: string; n?: string; adm?: 1 } | { k: 'a'; iat: number; exp: number };
 type UserSession = { k: 'u'; u: string; v: number; iat: number; exp: number };
 
 const USER_TTL = 180 * 864e5;
@@ -56,6 +60,7 @@ const K = {
   medals: (id: string) => `tr:um:${id}`,
   userGames: (id: string) => `tr:ug:${id}`,
   claim: (worldId: string, guest: string) => `tr:claim:${worldId}:${guest}`,
+  members: (worldId: string) => `tr:wm:${worldId}`,
   rl: (scope: string, ip: string) => `tr:rl:${scope}:${ip}`,
 };
 
@@ -76,6 +81,10 @@ const str = (v: unknown, max: number, field: string, required = true): string =>
   if (required && !s) fail(400, 'invalid', `Falta ${field}.`);
   return s;
 };
+
+const listed = (w: WorldDoc) => w.listed !== false;
+const BLOCKED = 'Tu acceso a este repertorio está suspendido. Habla con tu entrenador.';
+const NEEDS_ACCOUNT = 'Este repertorio se abre con tu cuenta de Lichess: entra con Lichess y vuelve a escribir la clave.';
 
 function toPublic(w: WorldDoc): PublicWorld {
   return {
@@ -100,6 +109,14 @@ function guestKey(name: string): string {
   if (k.startsWith(ACCOUNT_PREFIX)) fail(400, 'invalid', 'Ese nombre no está permitido.');
   return k;
 }
+const guestKeyOrNull = (name: string | null | undefined) => {
+  const k = name ? playerKey(name) : '';
+  return k && !k.startsWith(ACCOUNT_PREFIX) ? k : null;
+};
+const headerName = (v: string | undefined) => {
+  if (!v) return null;
+  try { const n = decodeURIComponent(v).trim().slice(0, 40); return n || null; } catch { return null; }
+};
 
 function validRedirect(v: unknown): string {
   const s = str(v, 300, 'redirectUri');
@@ -126,7 +143,27 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
     return w!;
   }
 
-  async function auth(kv: KV, req: Req): Promise<{ role: 'admin' } | { role: 'world'; world: WorldDoc }> {
+  /** The Lichess account in the X-Traynsko-User header, checked by signature only (no database read). */
+  function accountIdOf(req: Req): string | null {
+    const raw = (req.user ?? '').trim();
+    if (!raw || !keys) return null;
+    const s = readToken<UserSession>(raw, keys.sign);
+    return s && s.k === 'u' && s.exp > Date.now() ? s.u : null;
+  }
+
+  async function memberOf(kv: KV, worldId: string, id: string) { return kv.hget<Member>(K.members(worldId), id); }
+
+  /** Record (or refresh) who is using a repertoire. A block, once set, is kept. */
+  async function touchMember(kv: KV, worldId: string, id: string, kind: Member['kind'], name: string) {
+    const now = new Date().toISOString();
+    const prev = await memberOf(kv, worldId, id);
+    const m: Member = { ...(prev ?? { id, kind, first: now }), id, kind, name: name.slice(0, 40), last: now };
+    await kv.hset(K.members(worldId), id, m);
+    return m;
+  }
+
+  type WorldAuth = { role: 'world'; world: WorldDoc; session: Extract<Session, { k: 'w' }>; member: string | null; account: string | null };
+  async function auth(kv: KV, req: Req): Promise<{ role: 'admin' } | WorldAuth> {
     if (!keys) fail(503, 'not_configured', 'Falta configurar la clave maestra en el servidor.');
     const raw = (req.auth ?? '').replace(/^Bearer\s+/i, '');
     const s = raw ? readToken<Session>(raw, keys!.sign) : null;
@@ -135,10 +172,17 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       if (s!.exp < Date.now()) fail(401, 'admin_expired', 'Tu acceso maestro caducó. Escribe la clave maestra otra vez.');
       return { role: 'admin' };
     }
-    const w = await kv.get<WorldDoc>(K.world(s!.w));
+    const ws = s as Extract<Session, { k: 'w' }>;
+    const w = await kv.get<WorldDoc>(K.world(ws.w));
     if (!w || !w.active) fail(401, 'world_closed', 'Este repertorio ya no está disponible.');
-    if (w!.pwv !== s!.v) fail(401, 'password_changed', 'La clave de este repertorio cambió. Escribe la nueva para seguir.');
-    return { role: 'world', world: w! };
+    if (w!.pwv !== ws.v) fail(401, 'password_changed', 'La clave de este repertorio cambió. Escribe la nueva para seguir.');
+    if (ws.adm) return { role: 'world', world: w!, session: ws, member: null, account: null };
+    // who is this: the account if signed in, else whoever entered with this token, else the name typed on the device
+    const account = accountIdOf(req);
+    if (w!.accountOnly && !account) fail(401, 'account_required', NEEDS_ACCOUNT);
+    const member = account ? accountKey(account) : ws.m ?? guestKeyOrNull(headerName(req.player));
+    if (member && (await memberOf(kv, w!.id, member))?.blocked) fail(403, 'access_blocked', BLOCKED);
+    return { role: 'world', world: w!, session: ws, member, account };
   }
 
   async function requireAdmin(kv: KV, req: Req) {
@@ -283,7 +327,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
 
     /* ---------- public ---------- */
     if (a === 'worlds' && !b && M === 'GET') {
-      const worlds = (await allWorlds(kv)).filter((w) => w.active).map(toPublic);
+      const worlds = (await allWorlds(kv)).filter((w) => w.active && listed(w)).map(toPublic);
       return { status: 200, body: { worlds } };
     }
 
@@ -291,19 +335,38 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       if (!keys) fail(503, 'not_configured', 'Falta configurar la clave maestra en el servidor.');
       await limit(kv, 'enter', req.ip, 20, 600);
       const opens = (w: WorldDoc, given: string) => { const real = decrypt(w.pw, keys!.enc); return real !== null && sameText(given, normPassword(real)); };
-      const entry = (w: WorldDoc) => ({ token: signToken({ k: 'w', w: w.id, v: w.pwv, iat: Date.now() }, keys!.sign), world: toPublic(w) });
+      // who is entering: a Lichess account, or a guest by the name they typed
+      const user = await userOf(kv, req, false);
+      const guestName = user ? null : str(req.body?.name, 40, 'tu nombre', false) || null;
+      const member = user ? accountKey(user.id) : guestKeyOrNull(guestName);
+      const refusal = async (w: WorldDoc): Promise<'account_required' | 'access_blocked' | null> => {
+        if (w.accountOnly && !user) return 'account_required';
+        if (member && (await memberOf(kv, w.id, member))?.blocked) return 'access_blocked';
+        return null;
+      };
+      const entry = async (w: WorldDoc) => {
+        if (member) await touchMember(kv, w.id, member, user ? 'account' : 'guest', user ? user.name : guestName!);
+        const tok = { k: 'w' as const, w: w.id, v: w.pwv, iat: Date.now(), ...(member ? { m: member } : {}), ...(guestName ? { n: guestName } : {}) };
+        return { token: signToken(tok, keys!.sign), world: toPublic(w) };
+      };
+      const refuse = (why: 'account_required' | 'access_blocked') => fail(why === 'access_blocked' ? 403 : 401, why, why === 'access_blocked' ? BLOCKED : NEEDS_ACCOUNT);
       if (req.body?.world === undefined || req.body?.world === null || req.body?.world === '') {
         // Only the key: it says which repertoire(s) it opens, so the cover never has to list them all.
         const given = normPassword(str(req.body?.password, 200, 'la clave'));
         const matches = (await allWorlds(kv)).filter((w) => w.active && opens(w, given));
         if (!matches.length) fail(401, 'wrong_password', 'Esa clave no abre ningún repertorio.');
-        return { status: 200, body: { entries: matches.map(entry) } };
+        const why = await Promise.all(matches.map(refusal));
+        const allowed = matches.filter((_, i) => !why[i]);
+        if (!allowed.length) refuse(why.includes('access_blocked') ? 'access_blocked' : 'account_required');
+        return { status: 200, body: { entries: await Promise.all(allowed.map(entry)) } };
       }
       const w = await loadWorld(kv, str(req.body?.world, 40, 'repertorio'));
       if (!w.active) fail(404, 'world_not_found', 'Ese repertorio no está disponible.');
       const given = normPassword(str(req.body?.password, 200, 'la clave'));
       if (!opens(w, given)) fail(401, 'wrong_password', 'Clave incorrecta.');
-      return { status: 200, body: entry(w) };
+      const why = await refusal(w);
+      if (why) refuse(why);
+      return { status: 200, body: await entry(w) };
     }
 
     if (a === 'admin' && b === 'login' && M === 'POST') {
@@ -348,6 +411,13 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       const ids = await kv.smembers(K.userGames(u.id));
       const games = (await kv.mget<GameRecord>(ids.map(K.game))).filter(Boolean) as GameRecord[];
       for (const g of games) await deleteGame(kv, g);
+      const ak = accountKey(u.id);
+      for (const w of await allWorlds(kv)) {
+        const m = await memberOf(kv, w.id, ak);
+        if (!m) continue;
+        if (m.blocked) await kv.hset(K.members(w.id), ak, { ...m, name: 'Cuenta borrada' });   // a block survives the account
+        else await kv.hdel(K.members(w.id), ak);
+      }
       const claimKeys = u.claims.map((c) => { const [w, gk] = c.split('|'); return K.claim(w, gk); });
       await kv.del(K.userGames(u.id), K.medals(u.id), K.user(u.id), ...claimKeys);
       return { status: 200, body: { ok: true, games: games.length } };
@@ -418,7 +488,13 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
     if (a === 'content' && M === 'GET') {
       const s = await auth(kv, req);
       if (s.role !== 'world') fail(400, 'invalid', 'Entra a un repertorio.');
-      const w = (s as { world: WorldDoc }).world;
+      const wa = s as WorldAuth;
+      const w = wa.world;
+      if (wa.member) {
+        const u = wa.account ? await userOf(kv, req, false) : null;
+        const name = u ? u.name : headerName(req.player) ?? wa.session.n ?? null;
+        if (name) await touchMember(kv, w.id, wa.member, u ? 'account' : 'guest', name);
+      }
       const docs = await kv.mget<{ lines: Line[] }>(w.reps.map((r) => K.rep(r.id)));
       const reps = w.reps.map((r, i) => ({ ...r, lines: docs[i]?.lines ?? [] }));
       return { status: 200, body: { world: toPublic(w), reps } };
@@ -479,21 +555,25 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
         const docs = await allWorlds(kv);
         const stats = await kv.mget<WorldStats>(docs.map((w) => K.stats(w.id)));
         const counts = await Promise.all(docs.map((w) => kv.zcard(K.worldGames(w.id))));
+        const members = await Promise.all(docs.map((w) => kv.hgetall<Member>(K.members(w.id))));
         const worlds: AdminWorld[] = docs.map((w, i) => ({
           ...toPublic(w),
           password: decrypt(w.pw, keys!.enc) ?? '',
           active: w.active,
+          listed: listed(w),
+          accountOnly: !!w.accountOnly,
           createdAt: w.createdAt,
           reps: w.reps,
           gameCount: counts[i],
-          players: Object.values(stats[i]?.players ?? {}).sort((x, y) => y.last.localeCompare(x.last)),
+          players: Object.entries(stats[i]?.players ?? {}).map(([key, p]) => ({ ...p, key })).sort((x, y) => y.last.localeCompare(x.last)),
+          members: Object.values(members[i]).sort((x, y) => y.last.localeCompare(x.last)),
         }));
         return { status: 200, body: { worlds } };
       }
 
       if (b === 'enter' && M === 'POST') {
         const w = await loadWorld(kv, str(req.body?.world, 40, 'repertorio'));
-        const token = signToken({ k: 'w', w: w.id, v: w.pwv, iat: Date.now() }, keys!.sign);
+        const token = signToken({ k: 'w', w: w.id, v: w.pwv, iat: Date.now(), adm: 1 }, keys!.sign);
         return { status: 200, body: { token, world: toPublic(w) } };
       }
 
@@ -506,6 +586,7 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
         const w: WorldDoc = {
           id: newId(), name, subtitle: str(req.body?.subtitle, 120, 'la descripción', false), emblem, hue,
           pw: encrypt(password, keys!.enc), pwv: 1, active: true, createdAt: new Date().toISOString(), reps: [],
+          listed: req.body?.listed === true, accountOnly: req.body?.accountOnly === true,
         };
         await kv.set(K.world(w.id), w);
         const ids = (await kv.get<string[]>(K.worlds)) ?? [];
@@ -521,6 +602,8 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
         if (p.emblem !== undefined && EMBLEMS.includes(p.emblem)) w.emblem = p.emblem;
         if (typeof p.hue === 'number') w.hue = Math.round(p.hue) % 360;
         if (typeof p.active === 'boolean') w.active = p.active;
+        if (typeof p.listed === 'boolean') w.listed = p.listed;
+        if (typeof p.accountOnly === 'boolean') w.accountOnly = p.accountOnly;
         if (p.password !== undefined) {
           const pw = str(p.password, 100, 'la clave');
           if (pw.length < 4) fail(400, 'invalid', 'La clave debe tener al menos 4 caracteres.');
@@ -534,10 +617,25 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       if (b === 'worlds' && c && !d && M === 'DELETE') {
         const w = await loadWorld(kv, c);
         const gameIds = await kv.zrevrange(K.worldGames(w.id), 0, -1);
-        await kv.del(...gameIds.map(K.game), ...w.reps.map((r) => K.rep(r.id)), K.worldGames(w.id), K.stats(w.id), K.world(w.id));
+        await kv.del(...gameIds.map(K.game), ...w.reps.map((r) => K.rep(r.id)), K.worldGames(w.id), K.stats(w.id), K.world(w.id), K.members(w.id));
         const ids = (await kv.get<string[]>(K.worlds)) ?? [];
         await kv.set(K.worlds, ids.filter((x) => x !== w.id));
         return { status: 200, body: { ok: true } };
+      }
+
+      if (b === 'worlds' && c && d === 'access' && M === 'POST') {
+        const w = await loadWorld(kv, c);
+        const id = str(req.body?.member, 80, 'la persona');
+        if (typeof req.body?.blocked !== 'boolean') fail(400, 'invalid', 'Falta indicar si se bloquea.');
+        const kind: Member['kind'] = id.startsWith(ACCOUNT_PREFIX) ? 'account' : 'guest';
+        const now = new Date().toISOString();
+        const prev = await memberOf(kv, w.id, id);
+        const st = (await kv.get<WorldStats>(K.stats(w.id)))?.players[id];
+        const name = prev?.name ?? st?.name ?? str(req.body?.name, 40, 'el nombre', false) ?? id;
+        const m: Member = { id, kind, name: name || id, first: prev?.first ?? st?.last ?? now, last: prev?.last ?? st?.last ?? now };
+        if (req.body.blocked) { m.blocked = true; m.blockedAt = now; }
+        await kv.hset(K.members(w.id), id, m);
+        return { status: 200, body: { member: m } };
       }
 
       if (b === 'worlds' && c && d === 'order' && M === 'POST') {

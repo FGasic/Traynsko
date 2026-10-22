@@ -23,7 +23,7 @@ createServer(async (req, res) => {
     for await (const chunk of req) raw += chunk;
     let body: any = {};
     try { body = raw ? JSON.parse(raw) : {}; } catch { body = {}; }
-    const out = await app({ method: req.method ?? 'GET', path: url.pathname, query: url.searchParams, auth: req.headers.authorization, user: req.headers['x-traynsko-user'] as string | undefined, body, ip: String(req.headers['x-test-ip'] ?? '127.0.0.1') });
+    const out = await app({ method: req.method ?? 'GET', path: url.pathname, query: url.searchParams, auth: req.headers.authorization, user: req.headers['x-traynsko-user'] as string | undefined, player: req.headers['x-traynsko-player'] as string | undefined, body, ip: String(req.headers['x-test-ip'] ?? '127.0.0.1') });
     res.writeHead(out.status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(out.body));
     return;

@@ -10,6 +10,13 @@ Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el 
 - Con el color contrario repites las respuestas de la línea mientras tu repertorio juega solo; no se ganan emblemas.
 - Salir de una partida en curso (otro repertorio, la Sala) pide confirmación.
 
+## Acceso por persona (Sala del maestro → Usuarios)
+
+- Cada entrada a un repertorio queda registrada por persona: la cuenta de Lichess si la hay, si no el nombre escrito.
+- El maestro ve a todos los usuarios, su perfil (repertorios, partidas, puntos, errores) y puede **bloquear o devolver el acceso a una persona en un repertorio** sin cambiar la clave de nadie. El bloqueo actúa en la siguiente acción y también impide volver a entrar.
+- **Solo con cuenta de Lichess** (por repertorio): sin cuenta no se entra, así que un bloqueo no se puede esquivar escribiendo otro nombre. Recomendado para repertorios de pago.
+- **Visible en la Biblioteca** (por repertorio): los repertorios nuevos son privados; solo los marcados aparecen en la Biblioteca de todos.
+
 ## Tablas contra el bot
 
 - Puedes ofrecer tablas en la partida. El bot acepta en finales simplificados o posiciones sin progreso si no está claramente mejor; al principio de una partida con piezas solo acepta si está peor.
@@ -40,6 +47,7 @@ python3 qa_board.py  /tmp/qa   # piezas exactas tras cambiar de pestaña, redime
 python3 qa_layout.py /tmp/qa   # móviles, tabletas y escritorio, en vertical y horizontal
 python3 qa_hint.py   /tmp/qa   # la flecha de ayuda desaparece cuando debe
 python3 qa_flow.py   /tmp/qa   # «Comenzar partida», engranaje, color contrario, portada, Biblioteca, claves
+python3 qa_users.py  /tmp/qa   # Usuarios: perfil, bloqueo por persona, repertorios privados
 ```
 
 Cuentas y emblemas, con Lichess simulado (el código devuelto se toma como nombre de usuario):

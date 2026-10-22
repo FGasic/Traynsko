@@ -30,7 +30,7 @@ const login = (code: string, ip = '2.2.2.2') => call('POST', '/api/auth/lichess'
   r = await call('POST', '/api/admin/login', { password: 'nope' }); check(r.status === 401, 'bad master');
   r = await call('POST', '/api/admin/login', { password: 'Maestra-123' }); check(r.status === 200, 'master ok');
   const admin = (r.body as any).token;
-  r = await call('POST', '/api/admin/worlds', { name: 'Mundo Benko', password: 'Peon2025', emblem: 'pawn', hue: 30 }, admin); check(r.status === 200, 'create world');
+  r = await call('POST', '/api/admin/worlds', { name: 'Mundo Benko', password: 'Peon2025', emblem: 'pawn', hue: 30, listed: true }, admin); check(r.status === 200, 'create world');
   const wid = (r.body as any).world.id;
   r = await call('POST', '/api/admin/worlds', { name: 'X', password: 'ab' }, admin); check(r.status === 400, 'short pw rejected');
   const lines = parseRepertoire(readFileSync('tests/fixtures/ejemplo.pgn', 'utf8')).lines;
@@ -145,6 +145,48 @@ const login = (code: string, ip = '2.2.2.2') => call('POST', '/api/auth/lichess'
   const form = new URLSearchParams(sent[0].body);
   check(form.get('grant_type') === 'authorization_code' && form.get('code_verifier') === VERIFIER && form.get('client_id') === 'traynsko' && form.get('redirect_uri') === 'https://t.app/', 'token request form');
   check(sent[1].auth === 'Bearer lio_abc' && sent[2].method === 'DELETE', 'account read then token revoked');
+
+  /* ---------- access per person ---------- */
+  {
+    const M = (await call('POST', '/api/admin/login', { password: 'Maestra-123' }, undefined, '7.7.7.7')).body as any;
+    const adm = M.token;
+    r = await call('POST', '/api/admin/worlds', { name: 'Personal de Juan', password: 'juan-1234', emblem: 'rook', hue: 10 }, adm);
+    const pw = (r.body as any).world.id;
+    r = await call('GET', '/api/worlds'); check(!(r.body as any).worlds.some((w: any) => w.id === pw), 'new repertoire is private: not in the Biblioteca');
+    r = await call('POST', '/api/enter', { password: 'juan-1234', name: 'Juan Pérez' }, undefined, '7.7.7.1');
+    check(r.status === 200 && (r.body as any).entries[0].world.id === pw, 'private repertoire still opens with its key');
+    const jt = (r.body as any).entries[0].token;
+    r = await call('GET', '/api/admin/overview', {}, adm);
+    let ow = (r.body as any).worlds.find((w: any) => w.id === pw);
+    check(ow.members.length === 1 && ow.members[0].id === 'juan perez' && ow.members[0].kind === 'guest' && ow.listed === false, 'entering records the person');
+    r = await call('POST', `/api/admin/worlds/${pw}/access`, { member: 'juan perez', blocked: true }, adm); check(r.status === 200 && (r.body as any).member.blocked, 'block one person');
+    r = await call('GET', '/api/content', {}, jt); check(r.status === 403 && (r.body as any).error === 'access_blocked', 'blocked person is out at once (same key)');
+    r = await call('POST', '/api/enter', { password: 'juan-1234', name: 'juan perez' }, undefined, '7.7.7.1'); check(r.status === 403 && (r.body as any).error === 'access_blocked', 'blocked person cannot enter again');
+    r = await call('POST', '/api/enter', { password: 'juan-1234', name: 'Otra Persona' }, undefined, '7.7.7.1'); check(r.status === 200, 'someone else with the same key still enters');
+    const other = (r.body as any).entries[0].token;
+    r = await call('GET', '/api/content', {}, other); check(r.status === 200, 'the key keeps working for the others');
+    // a legacy token (no person inside) is still identified by the name the device sends
+    r = await call('POST', '/api/admin/enter', { world: pw }, adm);
+    r = await call('GET', '/api/content', {}, (r.body as any).token); check(r.status === 200, 'master is never blocked');
+    // account-only: the block can't be dodged with another name
+    await call('PATCH', `/api/admin/worlds/${pw}`, { accountOnly: true }, adm);
+    r = await call('GET', '/api/content', {}, other); check(r.status === 401 && (r.body as any).error === 'account_required', 'account-only: guests are asked to sign in');
+    r = await call('POST', '/api/enter', { password: 'juan-1234', name: 'Nombre Nuevo' }, undefined, '7.7.7.1'); check(r.status === 401 && (r.body as any).error === 'account_required', 'account-only: guest entry refused');
+    const jl = (await login('JuanLichess', '7.7.7.2')).body as any;
+    r = await call('POST', '/api/enter', { password: 'juan-1234' }, undefined, '7.7.7.2', jl.token); check(r.status === 200, 'account-only: account enters');
+    const at = (r.body as any).entries[0].token;
+    r = await call('POST', `/api/admin/worlds/${pw}/access`, { member: 'lichess:juanlichess', blocked: true }, adm);
+    r = await call('GET', '/api/content', {}, at, '7.7.7.2', jl.token); check(r.status === 403, 'blocked account is out');
+    r = await call('POST', '/api/enter', { password: 'juan-1234', name: 'Disfraz' }, undefined, '7.7.7.2'); check(r.status === 401, 'blocked account cannot come back as a guest');
+    r = await call('POST', `/api/admin/worlds/${pw}/access`, { member: 'lichess:juanlichess', blocked: false }, adm);
+    r = await call('GET', '/api/content', {}, at, '7.7.7.2', jl.token); check(r.status === 200, 'restored account is back in');
+    r = await call('GET', '/api/admin/overview', {}, adm);
+    ow = (r.body as any).worlds.find((w: any) => w.id === pw);
+    check(ow.accountOnly === true && ow.members.find((m: any) => m.id === 'lichess:juanlichess')?.blocked !== true && ow.members.find((m: any) => m.id === 'juan perez')?.blocked === true, 'overview shows access per person');
+    await call('PATCH', `/api/admin/worlds/${pw}`, { listed: true }, adm);
+    r = await call('GET', '/api/worlds'); check((r.body as any).worlds.some((w: any) => w.id === pw), 'listed repertoire appears in the Biblioteca');
+    await call('DELETE', `/api/admin/worlds/${pw}`, {}, adm);
+  }
 
   /* ---------- draws ---------- */
   const ROOKS = '8/5pk1/6p1/8/3R4/6P1/r4PK1/8 w - - 4 60';          // rook ending, equal
