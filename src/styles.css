@@ -372,6 +372,8 @@ button.world-badge:hover { border-color: var(--gold); box-shadow: 0 0 12px rgba(
 .board-shell cg-board square.oc.move-dest { background: radial-gradient(transparent 0%, transparent 78%, rgba(15, 20, 28, 0.34) 80%); }
 .board-shell cg-board square.move-dest:hover { background: rgba(236, 184, 66, 0.35); }
 .board-shell cg-board square.premove-dest { background: radial-gradient(rgba(60, 90, 140, 0.4) 20%, transparent 22%); }
+/* a premove onto an occupied square (a capture, or a recapture on your own piece): a ring, since a dot would hide under the piece */
+.board-shell cg-board square.oc.premove-dest { background: radial-gradient(transparent 0%, transparent 78%, rgba(40, 70, 130, 0.55) 80%); }
 .board-shell cg-board square.current-premove { background-color: rgba(70, 110, 170, 0.45); }
 .board-shell cg-board square.check { background: radial-gradient(ellipse at center, rgba(235, 50, 40, 1) 0%, rgba(220, 40, 30, 0.85) 30%, rgba(170, 0, 0, 0) 85%); }
 .board-shell cg-board square.wrong { background-color: rgba(226, 80, 70, 0.62); }
