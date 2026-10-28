@@ -262,6 +262,9 @@ function LineRow({ v, on, hits, full, onFull, onToggle, onMenu, onGrab, dragging
 }) {
   const title = lineTitle(v.line, v.index);
   const sub = lineSub(v.line);
+  // the PGN's Event, which the master uses to say which system the line belongs to (London Jobava, Trompowsky…)
+  const event = v.line.event.trim();
+  const tag = event && event !== title ? event : '';
   const ex = excerpt(v, hits);
   const moves = Math.ceil(v.sans.length / 2);
   return (
@@ -269,6 +272,7 @@ function LineRow({ v, on, hits, full, onFull, onToggle, onMenu, onGrab, dragging
       <span class="lm-grip" title="Arrastrar a otro conjunto" onPointerDown={(e) => onGrab(e as unknown as PointerEvent)}><Grip /></span>
       <Check state={on ? 'on' : 'off'} label={`Entrenar ${title}`} onToggle={onToggle} />
       <button type="button" class="lm-text" aria-expanded={full} onClick={onFull} title={full ? 'Ocultar las jugadas' : 'Ver todas las jugadas'}>
+        {tag && <span class="lm-event">{tag}</span>}
         <span class="lm-title"><span class="lm-name">{title}</span>{sub && <span class="lm-sub">{sub}</span>}</span>
         {!full && <span class="lm-moves">{ex.head && '… '}<Moves tokens={ex.tokens} />{ex.tail && ' …'}</span>}
       </button>
