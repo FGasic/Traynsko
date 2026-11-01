@@ -54,7 +54,16 @@ export function GameViewer({ game, boardTheme, onClose, onDelete, toast }: Props
     const fen = p ? p.fen : startFen;
     const turn = fen.split(' ')[1] === 'w' ? 'white' : 'black';
     api.set({ fen, lastMove: p ? [p.from, p.to] : undefined, check: p?.check ? turn : false, turnColor: turn });
-    listRef.current?.querySelector('.mv.current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // keep the current move visible by scrolling the list itself; scrollIntoView would also scroll the sheet
+    // and, on a phone, push the board out of sight
+    const list = listRef.current;
+    const cur = list?.querySelector<HTMLElement>('.mv.current');
+    if (list && !cur) list.scrollTop = 0;
+    else if (list && cur) {
+      const lr = list.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+      if (cr.top < lr.top + 4) list.scrollTop -= lr.top + 4 - cr.top;
+      else if (cr.bottom > lr.bottom - 4) list.scrollTop += cr.bottom - (lr.bottom - 4);
+    }
   }, [idx, ready]);
 
   useEffect(() => {
