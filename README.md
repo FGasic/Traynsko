@@ -9,8 +9,9 @@ Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el 
   - Cada jugador elige qué líneas entrena (por línea, por conjunto o por capítulo) y las agrupa en **conjuntos** propios: se crean, renombran, ordenan, pliegan (queda solo el título) y se llenan arrastrando cada línea por su asa (ratón o dedo, con desplazamiento automático) o desde su menú ⋯.
   - **Buscar** por nombre o por jugada, con letras españolas o inglesas y número opcional (`12.Ae3`, `12.Be3`, `2...Cf6`, `Cd7` encuentra `Nbd7`). Sobre el resultado: *Entrenar solo estas*, activar, desactivar o agrupar.
   - El entrenamiento usa solo las líneas activas; el tablero indica cuántas hay cuando no son todas. Las líneas nuevas que suba el maestro entran activas.
+  - **Al azar** o **En orden** (aquí y en el engranaje, es el mismo ajuste): en orden, las líneas activas salen una tras otra tal como las muestra la Biblioteca (capítulo a capítulo; dentro de cada uno, los conjuntos en su orden y luego las líneas sin conjunto). Una línea cuenta como hecha al empezarla o al saltarla con *Otra línea*, así que el orden sigue tras cerrar la app; al terminar la última vuelve a la primera. La línea siguiente aparece marcada en la lista, y *Volver a la primera* reinicia el orden. Se guarda en el dispositivo, por repertorio.
   - La selección se identifica por las jugadas de cada línea (no por el capítulo ni el nombre): sobrevive a renombrar o volver a subir un capítulo. Se guarda en el servidor por persona y repertorio (cuenta de Lichess o nombre) y en el dispositivo, así que es la misma en el móvil y en el ordenador.
-- Al abrir un repertorio la partida no empieza sola: el tablero espera a **Comenzar partida**. El engranaje, en la esquina del tablero, permite ajustar antes la fuerza del bot, el color (el del repertorio o el contrario) y el ritmo.
+- Al abrir un repertorio la partida no empieza sola: el tablero espera a **Comenzar partida**. El engranaje, en la esquina del tablero, permite ajustar antes la fuerza del bot, el color (el del repertorio o el contrario), el orden de las líneas (al azar o en orden) y el ritmo.
 - Con el color contrario repites las respuestas de la línea mientras tu repertorio juega solo; no se ganan emblemas.
 - Salir de una partida en curso (otro repertorio, la Sala) pide confirmación.
 
@@ -53,6 +54,7 @@ python3 qa_hint.py   /tmp/qa   # la flecha de ayuda desaparece cuando debe
 python3 qa_flow.py   /tmp/qa   # «Comenzar partida», engranaje, color contrario, portada, Biblioteca, claves
 python3 qa_users.py  /tmp/qa   # Usuarios: perfil, bloqueo por persona, repertorios privados
 python3 qa_library.py /tmp/qa  # Biblioteca: conjuntos, arrastrar (ratón y dedo), búsqueda por jugada, solo estas, otro dispositivo
+python3 qa_order.py  /tmp/qa   # líneas al azar o en orden: engranaje, Biblioteca, saltar, recargar, vuelta completa
 ```
 
 Cuentas y emblemas, con Lichess simulado (el código devuelto se toma como nombre de usuario):

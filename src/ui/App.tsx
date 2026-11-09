@@ -15,7 +15,7 @@ import type { Medal } from '../../shared/atlas';
 import { Engine } from '../lib/engine';
 import { setSoundEnabled, primeSound } from '../lib/sound';
 import { playerKey, type Line, type PublicWorld, type RepMeta, type Repertoire } from '../../shared/types';
-import { cleanPicks, emptyPicks, fromDisabledChapters, type Picks } from '../lib/picks';
+import { cleanPicks, emptyPicks, fromDisabledChapters, trainingOrder, type Picks } from '../lib/picks';
 
 type Tab = 'train' | 'games' | 'library' | 'atlas' | 'bots' | 'settings';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
@@ -239,11 +239,22 @@ export function App() {
   function updateSettings(patch: Partial<Settings>) {
     setSettings((prev) => { const next = { ...prev, ...patch }; prefs.saveSettings(next); return next; });
   }
+  /** Where the order stands in a repertoire (null: back to the first line). */
+  function setOrderAt(worldId: string, at: string | null) {
+    setSettings((prev) => {
+      const orderAt = { ...prev.orderAt };
+      if (at) orderAt[worldId] = at; else delete orderAt[worldId];
+      const next = { ...prev, orderAt };
+      prefs.saveSettings(next);
+      return next;
+    });
+  }
   /* ---------- the player's selection of lines ---------- */
   // Whose selection this is: the Lichess account, or the name typed on this device.
   const who = user ? 'lichess:' + user.id : session ? (session.asMaster ? 'master' : 'guest:' + playerKey(session.name)) : '';
   const picks = session && picksState?.world === session.world.id ? picksState.picks : null;
   const offKeys = useMemo(() => new Set(picks?.off ?? []), [picks?.off]);
+  const lineOrder = useMemo(() => trainingOrder(reps, picks), [reps, picks?.sets]);
 
   useEffect(() => {
     if (!session || !loaded) return;
@@ -382,6 +393,9 @@ export function App() {
                 settings={settings}
                 reps={reps0}
                 off={offKeys}
+                order={lineOrder}
+                orderAt={settings.orderAt[session.world.id]}
+                onOrderAt={(at) => setOrderAt(session.world.id, at)}
                 linesLoaded={loaded && !!picks}
                 engine={engine}
                 playerName={playerName}
@@ -400,6 +414,8 @@ export function App() {
               <div class="screen page">
                 <LibraryScreen
                   world={session.world} reps={reps0} loaded={loaded} picks={picks} onPicks={changePicks} toast={toast}
+                  lineOrder={settings.lineOrder} orderAt={settings.orderAt[session.world.id]}
+                  onLineOrder={(v) => updateSettings({ lineOrder: v })} onRestartOrder={() => setOrderAt(session.world.id, null)}
                   isMaster={!!session.asMaster} onOpenMaster={openMaster}
                   known={known} onOpen={openKnown}
                   onEnter={(t, w, n) => guard(() => enterWorld(t, w, n), `Abrir «${w.name}»`)}

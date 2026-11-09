@@ -187,17 +187,17 @@ export function matchLine(v: LineView, q: Query): { ok: boolean; plies: Set<numb
 
 /* ---------------- sets in a chapter ---------------- */
 
-export interface ChapterLayout { sets: { set: LineSet; lines: LineView[] }[]; loose: LineView[] }
+export interface ChapterLayout<T extends { key: string } = LineView> { sets: { set: LineSet; lines: T[] }[]; loose: T[] }
 
 /**
  * How a chapter shows: the player's sets that hold any of its lines (in their order), then the lines in no set.
  * An empty set shows in the chapter where it was created (or the first one, if that chapter is gone).
  */
-export function layoutChapter(views: LineView[], picks: Picks, _repIds?: string[]): ChapterLayout {
+export function layoutChapter<T extends { key: string }>(views: T[], picks: Picks, _repIds?: string[]): ChapterLayout<T> {
   const owner = new Map<string, string>();
   picks.sets.forEach((s) => s.lines.forEach((k) => { if (!owner.has(k)) owner.set(k, s.id); }));
-  const bySet = new Map<string, LineView[]>();
-  const loose: LineView[] = [];
+  const bySet = new Map<string, T[]>();
+  const loose: T[] = [];
   for (const v of views) {
     const id = owner.get(v.key);
     if (id) { if (!bySet.has(id)) bySet.set(id, []); bySet.get(id)!.push(v); } else loose.push(v);
@@ -208,6 +208,49 @@ export function layoutChapter(views: LineView[], picks: Picks, _repIds?: string[
 /** Sets with none of the world's lines: shown in the chapter they were created in. */
 export function emptySetsFor(repId: string, picks: Picks, allKeys: Set<string>, repIds: string[]): LineSet[] {
   return picks.sets.filter((s) => !s.lines.some((k) => allKeys.has(k)) && (s.rep === repId || ((!s.rep || !repIds.includes(s.rep)) && repIds[0] === repId)));
+}
+
+/* ---------------- training in order ---------------- */
+
+export interface OrderItem { rep: Repertoire; line: Line; key: string; /** `chapter:line`, where the order goes */ at: string }
+
+/** Every line in the order the Biblioteca lists them: chapter by chapter, the player's sets first (in their order), then the lines in no set. */
+export function trainingOrder(reps: Repertoire[], picks: Picks | null): OrderItem[] {
+  const p = picks ?? emptyPicksLocal;
+  return reps.flatMap((rep) => {
+    const items = rep.lines.map((line) => { const key = lineKey(line); return { rep, line, key, at: `${rep.id}:${key}` }; });
+    const lay = layoutChapter(items, p);
+    return [...lay.sets.flatMap((s) => s.lines), ...lay.loose];
+  });
+}
+const emptyPicksLocal: Picks = { v: 1, off: [], sets: [], at: new Date(0).toISOString() };
+
+export interface NextInOrder {
+  item: OrderItem;
+  /** 1-based place among the lines in training, and how many there are */
+  pos: number;
+  total: number;
+  /** the list ran out and starts again from the first line */
+  wrapped: boolean;
+}
+
+/**
+ * The line that comes after `at` (the last one played in order), skipping lines out of training and starting
+ * again at the end. Without `at`, or when it is no longer in the repertoire, the first line in training.
+ */
+export function nextInOrder(order: OrderItem[], off: Set<string>, at: string | undefined): NextInOrder | null {
+  const active = order.filter((x) => !off.has(x.key));
+  if (!active.length) return null;
+  let a = at ? order.findIndex((x) => x.at === at) : -1;
+  // the chapter was uploaded again (new id): the same moves still say where we were
+  if (a < 0 && at) a = order.findIndex((x) => x.key === at.slice(at.indexOf(':') + 1));
+  for (let j = 1; j <= order.length; j++) {
+    const i = (a + j) % order.length;
+    const item = order[i];
+    if (off.has(item.key)) continue;
+    return { item, pos: active.indexOf(item) + 1, total: active.length, wrapped: a >= 0 && i <= a };
+  }
+  return null;
 }
 
 /* ---------------- changes (each returns a new value) ---------------- */

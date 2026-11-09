@@ -7,10 +7,11 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/ho
 import type { Repertoire } from '../../shared/types';
 import {
   buildIndex, createSet, deleteSet, emptySetsFor, excerpt, foldSet, layoutChapter, lineTitle, lineSub, matchLine, moveLines,
-  moveTokens, onlyLines, parseQuery, renameSet, setLinesOn, shiftSet, type LineSet, type LineView, type MoveToken, type Picks,
+  moveTokens, nextInOrder, onlyLines, parseQuery, renameSet, setLinesOn, shiftSet, trainingOrder,
+  type LineSet, type LineView, type MoveToken, type Picks,
 } from '../lib/picks';
 import { prefs } from '../lib/prefs';
-import { Check, Dots, Grip, Icon, PieceDot } from './parts';
+import { Check, Dots, Grip, Icon, PieceDot, Segmented } from './parts';
 
 type CheckState = 'on' | 'off' | 'mixed';
 const stateOf = (keys: string[], off: Set<string>): CheckState => {
@@ -30,9 +31,15 @@ interface Props {
   picks: Picks;
   onChange(next: Picks): void;
   toast(t: string, k?: 'info' | 'good' | 'bad'): void;
+  /** random, or one line after another as this list shows them */
+  lineOrder: 'random' | 'ordered';
+  /** in order: the last line started or skipped */
+  orderAt: string | undefined;
+  onLineOrder(v: 'random' | 'ordered'): void;
+  onRestartOrder(): void;
 }
 
-export function LineManager({ worldId, reps, picks, onChange, toast }: Props) {
+export function LineManager({ worldId, reps, picks, onChange, toast, lineOrder, orderAt, onLineOrder, onRestartOrder }: Props) {
   const index = useMemo(() => buildIndex(reps), [reps]);
   const repIds = useMemo(() => reps.map((r) => r.id), [reps]);
   const allViews = useMemo(() => reps.flatMap((r) => index.get(r.id) ?? []), [index, reps]);
@@ -62,6 +69,12 @@ export function LineManager({ worldId, reps, picks, onChange, toast }: Props) {
     void from;
   });
 
+  // in order: the line that comes next (marked in the list)
+  const next = useMemo(
+    () => (lineOrder === 'ordered' ? nextInOrder(trainingOrder(reps, picks), off, orderAt) : null),
+    [lineOrder, reps, picks.sets, off, orderAt],
+  );
+  const isNext = (v: LineView) => !!next && next.item.rep.id === v.rep.id && next.item.key === v.key;
   const total = allViews.length;
   const narrow = window.innerWidth < 520;
   const active = allViews.filter((v) => !off.has(v.key)).length;
@@ -84,9 +97,21 @@ export function LineManager({ worldId, reps, picks, onChange, toast }: Props) {
       <div class="lm-top">
         <p class="summary">
           En juego: <strong>{active}</strong> de {plural(total, 'línea', 'líneas')}
-          {setsShown > 0 && <> · {plural(setsShown, 'conjunto', 'conjuntos')}</>}. Cada partida elige al azar una de las líneas en juego.
+          {setsShown > 0 && <> · {plural(setsShown, 'conjunto', 'conjuntos')}</>}.
         </p>
         {active < total && <button type="button" class="btn ghost small" onClick={() => onChange(setLinesOn(picks, [...allKeys], true))}>Activar todas</button>}
+      </div>
+
+      <div class="lm-order" role="group" aria-label="Orden de entrenamiento">
+        <Segmented id="lm-order" value={lineOrder} options={[{ value: 'random', label: 'Al azar' }, { value: 'ordered', label: 'En orden' }]} onChange={onLineOrder} />
+        <p class="lm-order-text">
+          {lineOrder === 'random'
+            ? 'Cada partida toma al azar una de las líneas en juego.'
+            : next
+              ? <>Una tras otra, en el orden de esta lista. Sigue la <strong>{next.pos}</strong> de {next.total}{reps.length > 1 && <>, en «{next.item.rep.name}»</>}.</>
+              : 'Una tras otra, en el orden de esta lista.'}
+        </p>
+        {next && next.pos > 1 && <button type="button" class="btn ghost small" onClick={() => { onRestartOrder(); toast('El orden vuelve a empezar por la primera línea.'); }}>Volver a la primera</button>}
       </div>
 
       <div class="lm-search">
@@ -171,7 +196,7 @@ export function LineManager({ worldId, reps, picks, onChange, toast }: Props) {
                           <button type="button" class="icon-btn lm-more" aria-label={`Opciones del conjunto ${set.name}`} onClick={() => setMenu({ kind: 'set', set, rep: rep.id, siblings })}><Dots /></button>
                         </header>
                         {!closed && (vis.length
-                          ? <ol class="lm-lines">{vis.map((v) => <LineRow v={v} on={!off.has(v.key)} hits={hits?.get(rep.id + ':' + v.key)} full={full === rep.id + ':' + v.key} onFull={() => setFull(full === rep.id + ':' + v.key ? null : rep.id + ':' + v.key)} onToggle={() => onChange(setLinesOn(picks, [v.key], off.has(v.key)))} onMenu={() => setMenu({ kind: 'line', view: v })} onGrab={(e) => drag.start(e, v)} dragging={drag.state?.key === v.key && drag.state.rep === rep.id} />)}</ol>
+                          ? <ol class="lm-lines">{vis.map((v) => <LineRow v={v} on={!off.has(v.key)} next={isNext(v)} hits={hits?.get(rep.id + ':' + v.key)} full={full === rep.id + ':' + v.key} onFull={() => setFull(full === rep.id + ':' + v.key ? null : rep.id + ':' + v.key)} onToggle={() => onChange(setLinesOn(picks, [v.key], off.has(v.key)))} onMenu={() => setMenu({ kind: 'line', view: v })} onGrab={(e) => drag.start(e, v)} dragging={drag.state?.key === v.key && drag.state.rep === rep.id} />)}</ol>
                           : <p class="lm-empty">Arrastra líneas aquí, o usa <Dots size={14} /> › Mover en cada línea.</p>)}
                       </section>
                     );
@@ -185,7 +210,7 @@ export function LineManager({ worldId, reps, picks, onChange, toast }: Props) {
                       <section class={`lm-set loose ${blocks.length ? '' : 'bare'} ${drag.state?.over === 'loose:' + rep.id ? 'drop' : ''}`} data-drop={`loose:${rep.id}`} data-rep={rep.id} aria-label="Líneas sin conjunto">
                         {blocks.length > 0 && <header class="lm-loose-head"><span>Sin conjunto</span><span class="lm-count">{lay.loose.length}</span></header>}
                         {vis.length
-                          ? <ol class="lm-lines">{vis.map((v) => <LineRow v={v} on={!off.has(v.key)} hits={hits?.get(rep.id + ':' + v.key)} full={full === rep.id + ':' + v.key} onFull={() => setFull(full === rep.id + ':' + v.key ? null : rep.id + ':' + v.key)} onToggle={() => onChange(setLinesOn(picks, [v.key], off.has(v.key)))} onMenu={() => setMenu({ kind: 'line', view: v })} onGrab={(e) => drag.start(e, v)} dragging={drag.state?.key === v.key && drag.state.rep === rep.id} />)}</ol>
+                          ? <ol class="lm-lines">{vis.map((v) => <LineRow v={v} on={!off.has(v.key)} next={isNext(v)} hits={hits?.get(rep.id + ':' + v.key)} full={full === rep.id + ':' + v.key} onFull={() => setFull(full === rep.id + ':' + v.key ? null : rep.id + ':' + v.key)} onToggle={() => onChange(setLinesOn(picks, [v.key], off.has(v.key)))} onMenu={() => setMenu({ kind: 'line', view: v })} onGrab={(e) => drag.start(e, v)} dragging={drag.state?.key === v.key && drag.state.rep === rep.id} />)}</ol>
                           : <p class="lm-empty">Todas las líneas están en algún conjunto. Arrastra una aquí para sacarla.</p>}
                       </section>
                     );
@@ -256,8 +281,8 @@ function Moves({ tokens }: { tokens: MoveToken[] }) {
   return <>{tokens.map((t, i) => <>{i > 0 && ' '}{t.num && <span class="mn">{t.num}</span>}{t.hit ? <mark>{t.text}</mark> : t.text}</>)}</>;
 }
 
-function LineRow({ v, on, hits, full, onFull, onToggle, onMenu, onGrab, dragging }: {
-  v: LineView; on: boolean; hits?: Set<number>; full: boolean; dragging: boolean;
+function LineRow({ v, on, next, hits, full, onFull, onToggle, onMenu, onGrab, dragging }: {
+  v: LineView; on: boolean; next: boolean; hits?: Set<number>; full: boolean; dragging: boolean;
   onFull(): void; onToggle(): void; onMenu(): void; onGrab(e: PointerEvent): void;
 }) {
   const title = lineTitle(v.line, v.index);
@@ -268,10 +293,11 @@ function LineRow({ v, on, hits, full, onFull, onToggle, onMenu, onGrab, dragging
   const ex = excerpt(v, hits);
   const moves = Math.ceil(v.sans.length / 2);
   return (
-    <li class={`lm-line ${on ? '' : 'off'} ${dragging ? 'lifted' : ''}`}>
+    <li class={`lm-line ${on ? '' : 'off'} ${dragging ? 'lifted' : ''} ${next ? 'is-next' : ''}`}>
       <span class="lm-grip" title="Arrastrar a otro conjunto" onPointerDown={(e) => onGrab(e as unknown as PointerEvent)}><Grip /></span>
       <Check state={on ? 'on' : 'off'} label={`Entrenar ${title}`} onToggle={onToggle} />
       <button type="button" class="lm-text" aria-expanded={full} onClick={onFull} title={full ? 'Ocultar las jugadas' : 'Ver todas las jugadas'}>
+        {next && <span class="lm-next">Siguiente en el orden</span>}
         {tag && <span class="lm-event">{tag}</span>}
         <span class="lm-title"><span class="lm-name">{title}</span>{sub && <span class="lm-sub">{sub}</span>}</span>
         {!full && <span class="lm-moves">{ex.head && '… '}<Moves tokens={ex.tokens} />{ex.tail && ' …'}</span>}

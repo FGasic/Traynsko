@@ -4,6 +4,7 @@ import { parseRepertoire } from '../src/lib/pgn';
 import {
   buildIndex, parseQuery, matchLine, moveCandidates, sanMatches, layoutChapter, emptySetsFor, setLinesOn, onlyLines,
   moveLines, createSet, renameSet, deleteSet, foldSet, shiftSet, fromDisabledChapters, excerpt, emptyPicks, cleanPicks, lineKey, offSet,
+  trainingOrder, nextInOrder,
 } from '../src/lib/picks';
 import type { Repertoire } from '../shared/types';
 
@@ -98,6 +99,48 @@ check(dup.sets[1].lines.length === 0, 'a line in two sets keeps the first');
 const mig = fromDisabledChapters(reps, [rep2.id]);
 check(!!mig && mig.off.length === rep2.lines.length, 'old switched-off chapters become switched-off lines');
 check(lineKey({ uci: 'e2e4 c7c5' }) === lineKey({ uci: ' e2e4  c7c5 ', fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' }), 'key ignores spacing and the standard start');
+
+// training in order: the Biblioteca's order, one line after another
+{
+  const plain = trainingOrder(reps, emptyPicks());
+  check(plain.length === rep.lines.length + rep2.lines.length, 'order holds every line');
+  check(plain[0].line === rep.lines[0] && plain[rep.lines.length].line === rep2.lines[0], 'chapter by chapter, in PGN order');
+  const none = new Set<string>();
+  const n0 = nextInOrder(plain, none, undefined)!;
+  check(n0.item === plain[0] && n0.pos === 1 && n0.total === plain.length && !n0.wrapped, 'no history: the first line');
+  const n1 = nextInOrder(plain, none, n0.item.at)!;
+  check(n1.item === plain[1] && n1.pos === 2, 'then the second');
+  const last = nextInOrder(plain, none, plain[plain.length - 1].at)!;
+  check(last.item === plain[0] && last.wrapped, 'after the last one, back to the first (a lap)');
+  // lines out of training are skipped, and a line left out keeps its place
+  const skip = new Set([plain[1].key, plain[2].key]);
+  const ns = nextInOrder(plain, skip, plain[0].at)!;
+  check(ns.item === plain[3] && ns.pos === 2 && ns.total === plain.length - 2, `out-of-training lines are skipped (${ns.pos}/${ns.total})`);
+  check(nextInOrder(plain, new Set([plain[2].key]), plain[2].at)!.item === plain[3], 'the last line played was switched off: go on after it');
+  check(nextInOrder(plain, new Set(plain.map((x) => x.key)), undefined) === null, 'nothing in training: nothing next');
+  check(nextInOrder(plain, none, 'gone:nothere').item === plain[0], 'unknown history: the first line');
+  check(nextInOrder(plain, none, 'NewRepId:' + plain[4].key)!.item === plain[5], 'chapter uploaded again (new id): the moves still say where we were');
+  const solo = new Set(plain.slice(1).map((x) => x.key));
+  const one = nextInOrder(plain, solo, plain[0].at)!;
+  check(one.item === plain[0] && one.total === 1, 'one line in training: always that one');
+  // sets come first, in the player's order, then the lines in no set (as the Biblioteca shows them)
+  let q = createSet(emptyPicks(), 'B', rep.id, [plain[5].key]).picks;
+  q = createSet(q, 'A', rep.id, [plain[3].key, plain[1].key]).picks;
+  const grouped = trainingOrder(reps, q);
+  const sicKeys = grouped.slice(0, rep.lines.length).map((x) => x.key);
+  check(sicKeys.slice(0, 3).join() === [plain[5].key, plain[1].key, plain[3].key].join(), 'sets first, in their order, lines in chapter order within a set');
+  check(sicKeys[3] === plain[0].key && grouped[rep.lines.length].line === rep2.lines[0], 'then the loose lines, then the next chapter');
+  const idx2 = buildIndex(reps).get(rep.id)!;
+  const lay2 = layoutChapter(idx2, q, reps.map((r) => r.id));
+  const shown = [...lay2.sets.flatMap((s) => s.lines), ...lay2.loose].map((v) => v.key);
+  check(shown.join() === sicKeys.join(), 'order matches what the Biblioteca shows');
+  // two chapters with the same line: each keeps its own place (no loop between them)
+  const twin: Repertoire = { ...rep, id: 'RepTwin03', name: 'Copia', lines: [rep.lines[0]] };
+  const tw = trainingOrder([rep, twin], emptyPicks());
+  const toTwin = nextInOrder(tw, none, tw[rep.lines.length - 1].at)!;
+  check(toTwin.item.rep.id === 'RepTwin03', 'the same moves in another chapter come in their turn');
+  check(nextInOrder(tw, none, toTwin.item.at)!.item === tw[0] && nextInOrder(tw, none, toTwin.item.at)!.wrapped, 'and then the lap closes');
+}
 
 const t0 = Date.now();
 const big: Repertoire = { ...rep, id: 'BigRep001', lines: Array.from({ length: 400 }, (_, i) => ({ ...lines[i % lines.length], id: 'l' + i, uci: lines[i % lines.length].uci })) };

@@ -82,8 +82,9 @@ export function MyGamesScreen({ token, player, boardTheme, refreshKey, toast, on
 
 /* ---------------- Biblioteca: every repertoire, with the chapters of the open one ---------------- */
 
-export function LibraryScreen({ world, reps, loaded, picks, onPicks, toast, isMaster, onOpenMaster, known, onOpen, onEnter, user, signingIn, onLogin }: {
+export function LibraryScreen({ world, reps, loaded, picks, onPicks, toast, lineOrder, orderAt, onLineOrder, onRestartOrder, isMaster, onOpenMaster, known, onOpen, onEnter, user, signingIn, onLogin }: {
   world: PublicWorld; reps: Repertoire[]; loaded: boolean; picks: Picks | null; onPicks(p: Picks): void; toast(t: string, k?: 'info' | 'good' | 'bad'): void;
+  lineOrder: 'random' | 'ordered'; orderAt: string | undefined; onLineOrder(v: 'random' | 'ordered'): void; onRestartOrder(): void;
   isMaster: boolean; onOpenMaster(): void;
   known: KnownWorld[]; onOpen(k: KnownWorld): void; onEnter(token: string, world: PublicWorld, name: string): void;
   user: UserSession | null; signingIn: boolean; onLogin(returnWorld?: string): void;
@@ -122,7 +123,7 @@ export function LibraryScreen({ world, reps, loaded, picks, onPicks, toast, isMa
         ) : reps.length === 0 ? (
           <p class="help">{isMaster ? 'Aún no hay capítulos: sube un PGN desde la Sala del maestro.' : 'Tu entrenador todavía no ha subido líneas a este repertorio.'}</p>
         ) : (
-          <LineManager worldId={world.id} reps={reps} picks={picks} onChange={onPicks} toast={toast} />
+          <LineManager worldId={world.id} reps={reps} picks={picks} onChange={onPicks} toast={toast} lineOrder={lineOrder} orderAt={orderAt} onLineOrder={onLineOrder} onRestartOrder={onRestartOrder} />
         )}
       </section>
 

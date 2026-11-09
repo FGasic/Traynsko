@@ -17,6 +17,10 @@ export interface Settings {
   coords: boolean;
   /** Play the repertoire's side, or the other one (the user plays the line's replies). */
   colorMode: 'rep' | 'opposite';
+  /** Which line comes next: any of those in training, or one after another as the Biblioteca lists them. */
+  lineOrder: 'random' | 'ordered';
+  /** In order: the last line started or skipped, per repertoire (`chapter:line`). */
+  orderAt: Record<string, string>;
   lastLineId?: string;
   /** chapters switched off, per world: superseded by the selection of lines (read once, to carry it over) */
   disabledReps: Record<string, string[]>;
@@ -36,6 +40,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   coords: true,
   colorMode: 'rep',
+  lineOrder: 'random',
+  orderAt: {},
   disabledReps: {},
 };
 

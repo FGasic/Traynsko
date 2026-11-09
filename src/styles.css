@@ -490,6 +490,12 @@ button.rep-open:hover .rep-name { color: #fff; }
 .lm { display: flex; flex-direction: column; gap: 12px; }
 .lm-top { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap; }
 .lm-top .summary { flex: 1 1 300px; }
+.lm-order { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; }
+.lm-order .segmented { flex: none; }
+.lm-order-text { margin: 0; flex: 1 1 220px; min-width: 0; color: var(--text-dim); font-size: 14.5px; }
+.lm-order-text strong { color: var(--gold-hi); }
+.lm-line.is-next { box-shadow: inset 3px 0 0 var(--gold); background: var(--gold-soft); border-radius: 3px; }
+.lm-next { font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; line-height: 1.2; color: var(--gold-hi); }
 .lm-search { position: relative; display: flex; align-items: center; }
 .lm-search > .icon { position: absolute; left: 12px; color: var(--gold-mid); pointer-events: none; }
 .lm-search .input { padding-left: 40px; padding-right: 44px; }
@@ -775,6 +781,16 @@ html.lm-dragging, html.lm-dragging * { cursor: grabbing !important; -webkit-user
 }
 .color-pick button.active { border-color: var(--gold); background: linear-gradient(180deg, var(--steel-hi), var(--steel)); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--hair); }
 .color-pick .piece-dot { width: 16px; height: 16px; }
+/* narrow phones: «Más ajustes» keeps only its icon, so both buttons share one row */
+@media (max-width: 440px) {
+  .game-opts .sheet-foot { flex-wrap: nowrap; }
+  .game-opts .go-more { flex: none; padding-inline: 13px; }
+  .game-opts .go-more-lbl { display: none; }
+  .game-opts .go-start { flex: 1; min-width: 0; justify-content: center; }
+}
+@media (max-width: 440px) and (max-height: 620px) { .go-body { gap: 12px; } }
+.control-inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.control-inline .field-label { margin: 0; }
 .cp-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
 .cp-text b { font-family: var(--font-display); font-size: 14.5px; letter-spacing: .05em; }
 .cp-text small { font-size: 12.5px; color: var(--text-mute); }

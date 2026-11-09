@@ -3,7 +3,7 @@ import type { Api } from 'chessground/api';
 import type { Key } from 'chessground/types';
 import { Chess, SQUARES, type Square } from 'chess.js';
 import { Board } from './Board';
-import { BotAvatar, GearIcon, Icon } from './parts';
+import { BotAvatar, GearIcon, Icon, Segmented } from './parts';
 import { BOTS, botById, type Bot } from '../lib/bots';
 import { Session, type PlayedMove } from '../lib/session';
 import type { Engine } from '../lib/engine';
@@ -15,6 +15,7 @@ import { sound } from '../lib/sound';
 import { useBoardFit } from '../lib/fit';
 import { lineFingerprint } from '../../shared/atlas';
 import { lineKey } from '../../shared/picks';
+import { nextInOrder, type OrderItem } from '../lib/picks';
 import { MedalBadge } from './Atlas';
 
 export interface SaveResult { ok: boolean; message: string }
@@ -35,6 +36,11 @@ interface Props {
   reps: Repertoire[];
   /** lines the player left out of training (Biblioteca) */
   off: Set<string>;
+  /** every line as the Biblioteca lists them, for training in order */
+  order: OrderItem[];
+  /** in order: the last line started or skipped in this repertoire */
+  orderAt: string | undefined;
+  onOrderAt(at: string): void;
   linesLoaded: boolean;
   engine: () => Engine;
   playerName: string;
@@ -50,7 +56,11 @@ interface Props {
   onBusy(busy: boolean): void;
 }
 
-interface Meta { rep: RepMeta; line: Line; bot: Bot; startMove: number; startKey: string }
+interface Meta {
+  rep: RepMeta; line: Line; bot: Bot; startMove: number; startKey: string;
+  /** in order: where this line stands among those in training */
+  ord?: { at: string; pos: number; total: number; wrapped: boolean };
+}
 
 const colorName = (c: 'w' | 'b') => (c === 'w' ? 'white' : 'black');
 
@@ -145,8 +155,10 @@ export function TrainScreen(p: Props) {
   /**
    * Set up a line without starting it: the board shows its position and waits for «Comenzar partida».
    * `keep` rebuilds the same line (and bot) with new options, e.g. from the gear before starting.
+   * In order, the line is the one after `after` (by default, the last one started or skipped here);
+   * `keep` holds the line only while it is still that one.
    */
-  function prepare(keep = false) {
+  function prepare(keep = false, after?: string) {
     const prev = meta.current;
     sess.current?.destroy();
     sess.current = null;
@@ -161,9 +173,11 @@ export function TrainScreen(p: Props) {
     releaseWake();
     cg.current?.cancelMove();
     if (!pool.length) { meta.current = null; sync(); bump(); return; }
-    const kept = keep && prev ? pool.find((x) => x.rep.id === prev.rep.id && x.line.id === prev.line.id) : undefined;
+    const ordered = settings.lineOrder === 'ordered' ? nextInOrder(p.order, p.off, after ?? p.orderAt) : null;
+    const same = (x: { rep: RepMeta; line: Line }) => !!prev && x.rep.id === prev.rep.id && x.line.id === prev.line.id;
+    const kept = keep && prev ? (ordered ? (same(ordered.item) ? ordered.item : undefined) : pool.find(same)) : undefined;
     const fresh = pool.filter((x) => x.line.id !== settings.lastLineId);
-    const { rep, line } = kept ?? pick(fresh.length ? fresh : pool);
+    const { rep, line } = kept ?? ordered?.item ?? pick(fresh.length ? fresh : pool);
     const enabledBots = BOTS.filter((b) => settings.enabledBots.includes(b.id));
     const bot = kept && enabledBots.some((b) => b.id === prev!.bot.id) ? prev!.bot : pick(enabledBots.length ? enabledBots : BOTS);
     const startKey = `${settings.startMode}:${settings.startMove}:${settings.randomMax}`;
@@ -172,7 +186,8 @@ export function TrainScreen(p: Props) {
       : settings.startMode === 'fixed' ? Math.max(1, settings.startMove)
       : 1 + Math.floor(Math.random() * Math.max(1, settings.randomMax));
     const userColor = settings.colorMode === 'opposite' ? (rep.color === 'w' ? 'b' : 'w') : rep.color;
-    meta.current = { rep, line, bot, startMove, startKey };
+    const ord = ordered ? { at: ordered.item.at, pos: ordered.pos, total: ordered.total, wrapped: ordered.wrapped } : undefined;
+    meta.current = { rep, line, bot, startMove, startKey, ord };
     let engine: Engine | null = null;
     try { engine = p.engine(); } catch { engine = null; }
     const se = new Session(
@@ -226,6 +241,9 @@ export function TrainScreen(p: Props) {
     const se = sess.current;
     if (!se || se.started) return;
     setOptsOpen(false);
+    // in order, a line counts as done once started: the next one follows it, even after closing the app
+    const ord = meta.current?.ord;
+    if (ord) p.onOrderAt(ord.at);
     se.start();
     sync();
     bump();
@@ -237,7 +255,19 @@ export function TrainScreen(p: Props) {
   /** «Otra línea» during a line, «Siguiente línea» after a game: an explicit request, so it starts at once. */
   function nextLine() {
     prepare(false);
+    const ord = meta.current?.ord;
     begin();
+    if (ord?.wrapped && ord.total > 1) {
+      setBanner('Vuelta completa: de nuevo la primera línea.');
+      setTimeout(() => setBanner(null), 3200);
+    }
+  }
+
+  /** «Otra línea» before starting: in order, the line waiting is skipped and the next one takes its place. */
+  function skipLine() {
+    const ord = meta.current?.ord;
+    if (ord) p.onOrderAt(ord.at);
+    prepare(false, ord?.at);
   }
 
   function releaseWake() {
@@ -251,7 +281,7 @@ export function TrainScreen(p: Props) {
     if (!p.linesLoaded) return;
     const se = sess.current;
     if (!se || !se.started) prepare(!!se);
-  }, [p.linesLoaded, pool, settings.baseMin, settings.incSec, settings.startMode, settings.startMove, settings.randomMax, settings.elo, settings.botMoveSec, settings.enabledBots.join(','), settings.colorMode]);
+  }, [p.linesLoaded, pool, settings.baseMin, settings.incSec, settings.startMode, settings.startMove, settings.randomMax, settings.elo, settings.botMoveSec, settings.enabledBots.join(','), settings.colorMode, settings.lineOrder, p.order, p.orderAt]);
 
   useEffect(() => () => { sess.current?.destroy(); releaseWake(); }, []);
   // read-only hook for automated board checks
@@ -419,7 +449,11 @@ export function TrainScreen(p: Props) {
               <div class="ready-card">
                 <button type="button" class="btn primary start-btn" onClick={begin}><Icon name="play" size={18} />Comenzar partida</button>
                 <span class="ready-sub">Juegas con {userColor === 'w' ? 'blancas' : 'negras'}{opposite ? ' · color contrario' : ''}</span>
-                {pool.length < totalLines && (
+                {m?.ord ? (
+                  <button type="button" class="ready-pick" onClick={() => p.goTo('library')} title="Orden y selección de líneas en la Biblioteca">
+                    {m.ord.total === 1 ? '1 línea elegida' : `En orden · línea ${m.ord.pos} de ${m.ord.total}`}
+                  </button>
+                ) : pool.length < totalLines && (
                   <button type="button" class="ready-pick" onClick={() => p.goTo('library')} title="Elegir las líneas en la Biblioteca">
                     {pool.length === 1 ? '1 línea elegida' : `${pool.length} de ${totalLines} líneas`}
                   </button>
@@ -553,7 +587,7 @@ export function TrainScreen(p: Props) {
 
         <section class="actions">
           {phase === 'line' && (
-            <button type="button" class="btn ghost" onClick={() => (ready ? prepare(false) : nextLine())} disabled={pool.length === 0}><Icon name="skip" size={18} />Otra línea</button>
+            <button type="button" class="btn ghost" onClick={() => (ready ? skipLine() : nextLine())} disabled={pool.length === 0}><Icon name="skip" size={18} />Otra línea</button>
           )}
           {phase === 'bot' && !confirmResign && (
             <>
@@ -663,6 +697,10 @@ function GameOptions({ settings, repColor, onUpdate, onStart, onClose, onMore }:
               ))}
             </div>
           </div>
+          <div class="control control-inline">
+            <span class="field-label">Líneas</span>
+            <Segmented id="go-order" value={settings.lineOrder} options={[{ value: 'random', label: 'Al azar' }, { value: 'ordered', label: 'En orden' }]} onChange={(v) => onUpdate({ lineOrder: v })} />
+          </div>
           <div class="control">
             <span class="field-label">Ritmo</span>
             <div class="chips" role="radiogroup" aria-label="Ritmo">
@@ -674,8 +712,8 @@ function GameOptions({ settings, repColor, onUpdate, onStart, onClose, onMore }:
           </div>
         </div>
         <div class="sheet-foot">
-          <button type="button" class="btn ghost" onClick={onMore}>Más ajustes</button>
-          <button type="button" class="btn primary" onClick={onStart}><Icon name="play" size={18} />Comenzar partida</button>
+          <button type="button" class="btn ghost go-more" onClick={onMore} aria-label="Más ajustes" title="Más ajustes"><Icon name="sliders" size={18} /><span class="go-more-lbl">Más ajustes</span></button>
+          <button type="button" class="btn primary go-start" onClick={onStart}><Icon name="play" size={18} />Comenzar partida</button>
         </div>
       </div>
     </div>
