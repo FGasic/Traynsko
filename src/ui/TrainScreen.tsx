@@ -7,6 +7,7 @@ import { BotAvatar, GearIcon, Icon, Segmented } from './parts';
 import { BOTS, botById, type Bot } from '../lib/bots';
 import { Session, type PlayedMove } from '../lib/session';
 import type { Engine } from '../lib/engine';
+import type { Maia } from '../lib/maia';
 import type { Line, RepMeta, Repertoire } from '../../shared/types';
 import { TIME_PRESETS, type Settings } from '../lib/prefs';
 import type { NewGame } from '../lib/api';
@@ -43,6 +44,8 @@ interface Props {
   onOrderAt(at: string): void;
   linesLoaded: boolean;
   engine: () => Engine;
+  /** the network behind the human-style bot (loaded on first use) */
+  maia: () => Maia;
   playerName: string;
   isMaster: boolean;
   account: boolean;
@@ -190,6 +193,8 @@ export function TrainScreen(p: Props) {
     meta.current = { rep, line, bot, startMove, startKey, ord };
     let engine: Engine | null = null;
     try { engine = p.engine(); } catch { engine = null; }
+    let maia: Maia | null = null;
+    if (bot.human) { try { maia = p.maia(); maia.load().catch(() => {}); } catch { maia = null; } }
     const se = new Session(
       { line, userColor, bot, elo: settings.elo, baseMs: settings.baseMin * 60_000, incMs: settings.incSec * 1000, botMoveMs: settings.botMoveSec * 1000, startMove },
       engine,
@@ -229,6 +234,7 @@ export function TrainScreen(p: Props) {
           setTimeout(() => setBanner(null), 3000);
         },
       },
+      maia,
     );
     sess.current = se;
     if (!kept) p.onUpdateSettings({ lastLineId: line.id });
@@ -288,6 +294,7 @@ export function TrainScreen(p: Props) {
   useEffect(() => {
     (window as any).__traynskoFen = () => sess.current?.chess.fen() ?? null;
     (window as any).__traynskoLine = () => meta.current?.line.uci ?? null;
+    (window as any).__traynskoBot = () => ({ id: meta.current?.bot.id ?? null, last: sess.current?.lastBot ?? null });
   }, []);
 
   // clock tick

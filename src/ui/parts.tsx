@@ -64,6 +64,7 @@ export function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
 }
 
 const GLYPHS: Record<Bot['glyph'], ComponentChildren> = {
+  pawn: <path d="M14 6.6a3.1 3.1 0 1 0 0 6.2 3.1 3.1 0 0 0 0-6.2z M11.2 13.6h5.6l1.3 4.6H9.9z M8.6 19h10.8v2.4H8.6z" />,
   tower: <path d="M9 9h2v1.6h2V9h2v1.6h2V9h2v4l-2 1.5V20h-8v-5.5L9 13z" />,
   bolt: <path d="M15.5 6 9 15h4.5l-1.5 7 6.5-9h-4.5z" />,
   grid: <g><rect x="8" y="8" width="4" height="4" /><rect x="16" y="8" width="4" height="4" /><rect x="12" y="12" width="4" height="4" /><rect x="8" y="16" width="4" height="4" /><rect x="16" y="16" width="4" height="4" /></g>,

@@ -1,5 +1,5 @@
 // Per-device storage: training preferences, the open world session and the master session.
-import { BOTS } from './bots';
+import { DEFAULT_BOTS } from './bots';
 import type { PublicWorld } from '../../shared/types';
 
 export interface Settings {
@@ -27,7 +27,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  v: 2,
+  v: 3,
   baseMin: 10,
   incSec: 5,
   startMode: 'start',
@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
   randomMax: 12,
   elo: 2300,
   botMoveSec: 3,
-  enabledBots: BOTS.filter((b) => b.id !== 'maquina').map((b) => b.id),
+  enabledBots: [...DEFAULT_BOTS],
   boardTheme: 'imperio',
   sound: true,
   coords: true,
@@ -68,6 +68,8 @@ export const prefs = {
     delete stored.revealBot;
     // v2: the Imperio board becomes the default for everyone
     if (!stored.v || stored.v < 2) { stored.boardTheme = 'imperio'; stored.v = 2; }
+    // v3: Trayner (human style) becomes the bot everyone plays; the others can be switched back on in Bots
+    if (stored.v < 3) { stored.enabledBots = [...DEFAULT_BOTS]; stored.v = 3; }
     return { ...DEFAULT_SETTINGS, ...stored };
   },
   saveSettings: (s: Settings) => put('settings', s),

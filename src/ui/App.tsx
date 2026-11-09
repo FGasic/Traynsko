@@ -13,6 +13,8 @@ import { prefs, type KnownWorld, type Settings, type UserSession, type WorldSess
 import { startLichessLogin, takeLichessReturn } from '../lib/lichess';
 import type { Medal } from '../../shared/atlas';
 import { Engine } from '../lib/engine';
+import { Maia } from '../lib/maia';
+import { BOTS } from '../lib/bots';
 import { setSoundEnabled, primeSound } from '../lib/sound';
 import { playerKey, type Line, type PublicWorld, type RepMeta, type Repertoire } from '../../shared/types';
 import { cleanPicks, emptyPicks, fromDisabledChapters, trainingOrder, type Picks } from '../lib/picks';
@@ -72,6 +74,15 @@ export function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4600);
   };
   const engine = () => (engineRef.current ??= new Engine());
+  const maiaRef = useRef<Maia | null>(null);
+  const maia = () => (maiaRef.current ??= new Maia());
+  // the human-style bot's network (≈12 MB, cached by the browser) loads in the background when it may play
+  const humanOn = settings.enabledBots.some((id) => BOTS.find((b) => b.id === id)?.human);
+  useEffect(() => {
+    if (!humanOn || !loaded) return;
+    const t = setTimeout(() => { try { maia().load().catch(() => {}); } catch { /* the bot falls back to Stockfish */ } }, 1500);
+    return () => clearTimeout(t);
+  }, [humanOn, loaded]);
 
   useEffect(() => { setSoundEnabled(settings.sound); }, [settings.sound]);
   setPlayerName(session && !session.asMaster ? session.name : null);
@@ -398,6 +409,7 @@ export function App() {
                 onOrderAt={(at) => setOrderAt(session.world.id, at)}
                 linesLoaded={loaded && !!picks}
                 engine={engine}
+                maia={maia}
                 playerName={playerName}
                 isMaster={!!session.asMaster}
                 account={!!user}
@@ -428,7 +440,7 @@ export function App() {
                 <AtlasScreen reps={reps0} user={user} medals={medals} error={medalErr} signingIn={signingIn} onLogin={() => login()} onRetry={loadMedals} />
               </div>
             )}
-            {tab === 'bots' && <div class="screen page"><BotsScreen settings={settings} onUpdate={updateSettings} /></div>}
+            {tab === 'bots' && <div class="screen page"><BotsScreen settings={settings} onUpdate={updateSettings} maiaState={() => maiaRef.current?.state ?? 'idle'} /></div>}
             {tab === 'games' && (
               <div class="screen page">
                 <MyGamesScreen token={session.token} player={playerName} boardTheme={settings.boardTheme} refreshKey={gamesKey} toast={toast} onAuthError={handleAuth} />

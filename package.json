@@ -6,7 +6,7 @@
     "build": "node build.mjs",
     "dev": "node build.mjs && esbuild dev/server.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.cjs && node .dev/server.cjs",
     "typecheck": "tsc -p .",
-    "test": "esbuild tests/server.test.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.test.cjs && node .dev/server.test.cjs && esbuild tests/picks.test.ts --bundle --platform=node --format=cjs --outfile=.dev/picks.test.cjs && node .dev/picks.test.cjs"
+    "test": "esbuild tests/server.test.ts --bundle --platform=node --format=cjs --external:@upstash/redis --outfile=.dev/server.test.cjs && node .dev/server.test.cjs && esbuild tests/picks.test.ts --bundle --platform=node --format=cjs --outfile=.dev/picks.test.cjs && node .dev/picks.test.cjs && esbuild tests/human.test.ts --bundle --platform=node --format=cjs --outfile=.dev/human.test.cjs && node .dev/human.test.cjs"
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {
@@ -15,6 +15,7 @@
     "@upstash/redis": "1.38.4",
     "chess.js": "1.4.0",
     "chessground": "9.2.1",
+    "onnxruntime-web": "1.30.0",
     "preact": "10.29.8",
     "stockfish": "19.0.0"
   },

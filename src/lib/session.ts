@@ -2,6 +2,8 @@ import { Chess, type Move, type Square } from 'chess.js';
 import { ChessClock, type Side } from './clock';
 import { chooseMove, type Bot } from './bots';
 import type { Engine } from './engine';
+import type { Maia } from './maia';
+import { traynerMove } from './trayner';
 import { START_FEN, type Line } from './pgn';
 import { botAcceptsDraw, botOffersDraw, EQUAL_CP } from './draws';
 
@@ -34,6 +36,9 @@ export interface SessionEvents {
 }
 
 export interface PlayedMove { san: string; uci: string; by: MoveBy; clock: number }
+
+/** How the bot chose its last move (read by the automated checks). */
+export interface BotTrace { how: 'human' | 'mate' | 'engine' | 'fallback'; thinkMs: number; maiaMs?: number; top?: number; uci: string; error?: string }
 
 /** How many plies of the line are pre-played so the user starts at `startMove`. */
 export function plySkip(lineUci: string[], startFen: string, userColor: Side, startMove: number): number {
@@ -83,16 +88,21 @@ export class Session {
   outcome?: Outcome;
   private destroyed = false;
   private timers = new Set<ReturnType<typeof setTimeout>>();
+  /** every position of the game so far, current one last (the human-style bot looks at the last 8) */
+  private fens: string[] = [];
+  lastBot: BotTrace | null = null;
 
-  constructor(public cfg: SessionConfig, private engine: Engine | null, private ev: SessionEvents) {
+  constructor(public cfg: SessionConfig, private engine: Engine | null, private ev: SessionEvents, private maia: Maia | null = null) {
     this.startFen = cfg.line.fen ?? START_FEN;
     this.chess = new Chess(this.startFen);
     this.lineMoves = cfg.line.uci.split(' ').filter(Boolean);
     this.clock = new ChessClock(cfg.baseMs, cfg.incMs);
+    this.fens = [this.chess.fen()];
     const skip = plySkip(this.lineMoves, this.startFen, cfg.userColor, cfg.startMove);
     for (let i = 0; i < skip; i++) {
       const m = this.chess.move(this.uciObj(this.lineMoves[i]));
       this.played.push({ san: m.san, uci: this.lineMoves[i], by: 'pre', clock: cfg.baseMs });
+      this.fens.push(this.chess.fen());
     }
     this.lineIdx = skip;
     this.preplied = skip;
@@ -126,6 +136,7 @@ export class Session {
     const m = this.chess.move(this.uciObj(uci));
     this.clock.pressAfterMove(mover);
     this.played.push({ san: m.san, uci, by, clock: this.clock.remaining[mover] });
+    this.fens.push(this.chess.fen());
     this.ev.move(m, by);
     return m;
   }
@@ -192,18 +203,28 @@ export class Session {
     this.ev.change();
     const botSide = this.chess.turn();
     const t0 = performance.now();
-    let budget = this.cfg.botMoveMs * (0.8 + Math.random() * 0.4);
-    const left = this.clock.left(botSide);
-    if (left < 60_000) budget = Math.min(budget, left / 25);
-    budget = Math.max(300, budget);
     const fen = this.chess.fen();
+    const stale = () => this.destroyed || this.phase !== 'bot' || this.chess.fen() !== fen;
     let uci: string;
     let botEval = 0;
+    let budget: number;
     try {
-      const cands = await this.engine.search(fen, budget * 0.85);
-      if (this.destroyed || this.phase !== 'bot' || this.chess.fen() !== fen) { this.thinking = false; return; }
-      uci = chooseMove(fen, cands, this.cfg.bot, this.cfg.elo);
-      botEval = Math.max(...cands.map((c) => c.cp));
+      const human = this.cfg.bot.human && this.maia && this.maia.state !== 'failed' ? await this.humanMove(fen, botSide).catch((e) => ({ error: String(e?.message ?? e) })) : null;
+      if (stale()) { this.thinking = false; return; }
+      if (human && 'uci' in human) {
+        ({ uci, botEval, budget } = human);
+      } else {
+        budget = this.cfg.botMoveMs * (0.8 + Math.random() * 0.4);
+        const left = this.clock.left(botSide);
+        if (left < 60_000) budget = Math.min(budget, left / 25);
+        budget = Math.max(300, budget);
+        const spent = performance.now() - t0;
+        const cands = await this.engine.search(fen, Math.max(250, budget * 0.85 - spent));
+        if (stale()) { this.thinking = false; return; }
+        uci = chooseMove(fen, cands, this.cfg.bot, this.cfg.elo);
+        botEval = Math.max(...cands.map((c) => c.cp));
+        this.lastBot = { how: human ? 'fallback' : 'engine', thinkMs: Math.round(budget), uci, ...(human && 'error' in human ? { error: human.error } : {}) };
+      }
     } catch {
       this.thinking = false;
       this.ev.engineError();
@@ -212,7 +233,7 @@ export class Session {
     }
     const wait = budget - (performance.now() - t0);
     if (wait > 0) await new Promise((r) => this.later(() => r(null), wait));
-    if (this.destroyed || this.phase !== 'bot' || this.chess.fen() !== fen) { this.thinking = false; return; }
+    if (stale()) { this.thinking = false; return; }
     // Draws: answer the player's offer, or propose one with this move.
     const freePlies = this.played.length - this.lineMoves.length;
     const ctx = { fen, botEval, freePlies };
@@ -234,6 +255,17 @@ export class Session {
       this.ev.draw('offered');
     }
     this.ev.change();
+  }
+
+  /** Trayner's move (trayner.ts); the first one may wait a little for the network to finish loading. */
+  private async humanMove(fen: string, side: Side): Promise<{ uci: string; botEval: number; budget: number }> {
+    const r = await traynerMove({
+      engine: this.engine!, maia: this.maia!, fens: this.fens.slice(-8), elo: this.cfg.elo, avgMs: this.cfg.botMoveMs,
+      clockMs: this.clock.left(side), freePlies: this.played.length - this.lineMoves.length,
+      waitMs: this.maia!.state === 'ready' ? 0 : 4000, stale: () => this.destroyed || this.chess.fen() !== fen,
+    });
+    this.lastBot = { how: r.why === 'mate' ? 'mate' : 'human', thinkMs: Math.round(r.thinkMs), maiaMs: r.maiaMs, top: r.top, uci: r.uci };
+    return { uci: r.uci, botEval: r.botEval, budget: r.thinkMs };
   }
 
   /** A new offer is allowed once a few moves have passed since the last refusal. */
@@ -317,3 +349,4 @@ export class Session {
     this.engine?.stop();
   }
 }
+

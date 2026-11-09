@@ -1,6 +1,6 @@
 import { Chess, type Move } from 'chess.js';
 
-export type BotStyle = 'solid' | 'aggressive' | 'positional' | 'simplifier' | 'fighter' | 'wild' | 'precise';
+export type BotStyle = 'human' | 'solid' | 'aggressive' | 'positional' | 'simplifier' | 'fighter' | 'wild' | 'precise';
 
 export interface Bot {
   id: string;
@@ -9,12 +9,16 @@ export interface Bot {
   styleLabel: string;
   blurb: string;
   hue: number;          // avatar colour
-  glyph: 'tower' | 'bolt' | 'grid' | 'scale' | 'blade' | 'dice' | 'gear';
+  glyph: 'pawn' | 'tower' | 'bolt' | 'grid' | 'scale' | 'blade' | 'dice' | 'gear';
+  /** chooses like a person (Maia-3 + Stockfish, see human.ts); the margins below are its fallback */
+  human?: boolean;
   tolMul: number;       // multiplies the move-loss tolerance
   tempMul: number;      // multiplies the sampling temperature
 }
 
 export const BOTS: Bot[] = [
+  { id: 'trayner', name: 'Trayner', style: 'human', styleLabel: 'Humano', hue: 40, glyph: 'pawn', tolMul: 1.3, tempMul: 1.4, human: true,
+    blurb: 'Juega como una persona del nivel elegido: jugadas naturales, errores humanos y más o menos tiempo según la posición. Aprende de partidas reales (Maia-3).' },
   { id: 'muralla', name: 'Muralla', style: 'solid', styleLabel: 'Sólido', hue: 205, glyph: 'tower', tolMul: 0.8, tempMul: 0.8,
     blurb: 'Prioriza la seguridad del rey y las estructuras sanas. Rara vez se desordena.' },
   { id: 'tormenta', name: 'Tormenta', style: 'aggressive', styleLabel: 'Agresivo', hue: 12, glyph: 'bolt', tolMul: 1.1, tempMul: 1.1,
@@ -32,6 +36,9 @@ export const BOTS: Bot[] = [
 ];
 
 export const botById = (id: string) => BOTS.find((b) => b.id === id) ?? BOTS[0];
+
+/** Who plays unless the player chooses otherwise in Bots. */
+export const DEFAULT_BOTS = ['trayner'];
 
 /** A candidate from Stockfish MultiPV, score from the side to move, in centipawns. */
 export interface Candidate {
