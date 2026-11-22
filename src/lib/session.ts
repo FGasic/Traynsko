@@ -82,6 +82,9 @@ export class Session {
   private lastDeclined = -1000;
   /** The bot's latest evaluation, from its own side (centipawns). */
   private lastEval: number | null = null;
+  /** when the player's turn began in the game phase, and how long they took on each move there (ms) */
+  private userTurnAt = 0;
+  private userTimes: number[] = [];
   clock: ChessClock;
   result?: '1-0' | '0-1' | '1/2-1/2';
   termination?: string;
@@ -164,7 +167,9 @@ export class Session {
       return 'ok';
     }
     // bot phase: moving on means declining the bot's offer
+    const took = this.userTurnAt ? performance.now() - this.userTurnAt : 0;
     try { this.apply(uci, 'user'); } catch { return 'illegal'; }
+    if (took > 0) this.userTimes.push(took);
     if (this.drawOffer === 'bot') this.drawOffer = 'none';
     if (this.checkEnd()) return 'ok';
     this.botThink();
@@ -194,6 +199,7 @@ export class Session {
     this.phase = 'bot';
     this.ev.phase();
     if (this.chess.turn() !== this.cfg.userColor) this.botThink();
+    else this.userTurnAt = performance.now();
     this.ev.change();
   }
 
@@ -248,6 +254,7 @@ export class Session {
     const ply = this.played.length;
     this.thinking = false;
     this.apply(uci, 'bot');
+    this.userTurnAt = performance.now();
     if (this.checkEnd()) { this.ev.change(); return; }
     if (this.drawOffer === 'none' && botOffersDraw({ ...ctx, fen: this.chess.fen(), equalStreak: this.equalStreak, pliesSinceOffer: ply - this.lastBotOffer })) {
       this.drawOffer = 'bot';
@@ -262,10 +269,19 @@ export class Session {
     const r = await traynerMove({
       engine: this.engine!, maia: this.maia!, fens: this.fens.slice(-8), elo: this.cfg.elo, avgMs: this.cfg.botMoveMs,
       clockMs: this.clock.left(side), freePlies: this.played.length - this.lineMoves.length,
+      prevEval: this.lastEval, ...this.userPace(),
       waitMs: this.maia!.state === 'ready' ? 0 : 4000, stale: () => this.destroyed || this.chess.fen() !== fen,
     });
     this.lastBot = { how: r.why === 'mate' ? 'mate' : 'human', thinkMs: Math.round(r.thinkMs), maiaMs: r.maiaMs, top: r.top, uci: r.uci };
     return { uci: r.uci, botEval: r.botEval, budget: r.thinkMs };
+  }
+
+  /** The player's last thinking time, and their usual one (median of the earlier moves), once there are a few. */
+  private userPace(): { userMs?: number; userTypicalMs?: number } {
+    const t = this.userTimes;
+    if (t.length < 4) return {};
+    const prev = t.slice(-11, -1).sort((a, b) => a - b);
+    return { userMs: t[t.length - 1], userTypicalMs: prev[prev.length >> 1] };
   }
 
   /** A new offer is allowed once a few moves have passed since the last refusal. */

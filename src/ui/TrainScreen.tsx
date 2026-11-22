@@ -5,11 +5,12 @@ import { Chess, SQUARES, type Square } from 'chess.js';
 import { Board } from './Board';
 import { BotAvatar, GearIcon, Icon, Segmented } from './parts';
 import { BOTS, botById, type Bot } from '../lib/bots';
+import { randomRival, rememberRival } from '../lib/rivals';
 import { Session, type PlayedMove } from '../lib/session';
 import type { Engine } from '../lib/engine';
 import type { Maia } from '../lib/maia';
 import type { Line, RepMeta, Repertoire } from '../../shared/types';
-import { TIME_PRESETS, type Settings } from '../lib/prefs';
+import { prefs, TIME_PRESETS, type Settings } from '../lib/prefs';
 import type { NewGame } from '../lib/api';
 import { fmtClock } from '../lib/clock';
 import { sound } from '../lib/sound';
@@ -77,6 +78,13 @@ function destsOf(chess: Chess): Map<Key, Key[]> {
 }
 
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
+/** A grandmaster for Trayner to be in this game, not one of the latest on this device. */
+function nextRival(): string {
+  const recent = prefs.recentRivals();
+  const name = randomRival(recent);
+  prefs.saveRecentRivals(rememberRival(recent, name));
+  return name;
+}
 
 export function TrainScreen(p: Props) {
   const { settings } = p;
@@ -182,7 +190,9 @@ export function TrainScreen(p: Props) {
     const fresh = pool.filter((x) => x.line.id !== settings.lastLineId);
     const { rep, line } = kept ?? ordered?.item ?? pick(fresh.length ? fresh : pool);
     const enabledBots = BOTS.filter((b) => settings.enabledBots.includes(b.id));
-    const bot = kept && enabledBots.some((b) => b.id === prev!.bot.id) ? prev!.bot : pick(enabledBots.length ? enabledBots : BOTS);
+    const chosen = kept && enabledBots.some((b) => b.id === prev!.bot.id) ? prev!.bot : pick(enabledBots.length ? enabledBots : BOTS);
+    // the human-style bot takes the name of a grandmaster drawn for this game (kept when only the options change)
+    const bot = chosen.human && chosen !== prev?.bot ? { ...chosen, name: nextRival() } : chosen;
     const startKey = `${settings.startMode}:${settings.startMove}:${settings.randomMax}`;
     const startMove = kept && prev!.startKey === startKey ? prev!.startMove
       : settings.startMode === 'start' ? 1
@@ -436,7 +446,7 @@ export function TrainScreen(p: Props) {
       <div class="board-col">
         <PlayerStrip
           top
-          name={revealed && m ? m.bot.name : 'Rival'}
+          name={m && (revealed || m.bot.human) ? m.bot.name : 'Rival'}
           elo={elo}
           side={oppColor}
           session={s}

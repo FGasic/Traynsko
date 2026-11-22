@@ -128,14 +128,40 @@ function gauss(rnd: () => number) {
 }
 
 /**
- * How long a person would think: little for an obvious move (a recapture, the only good move), longer when
- * several moves are plausible, a little more on leaving the prepared line; faster when short of time.
- * `avgMs` is the bot's time per move from the settings.
+ * How long the engine may search for one of Trayner's moves. It depends only on whether the move is obvious and
+ * on the clock, never on the thinking time shown, so a long think doesn't make the move any stronger.
  */
-export function thinkTime(o: { top: number; legal: number; avgMs: number; clockMs: number; freePlies: number }, rnd: () => number = Math.random): number {
+export function searchTime(o: { top: number; legal: number; avgMs: number; clockMs: number }): number {
+  let t = o.top >= 0.9 || o.legal <= 1 ? 0.25 * o.avgMs : 0.85 * o.avgMs;
+  if (o.clockMs < 60_000) t = Math.min(t, o.clockMs / 30);
+  return Math.max(450, t);
+}
+
+/**
+ * How long a person would think: little for an obvious move (a recapture, the only good move), longer when
+ * several moves are plausible, a little more on leaving the prepared line; faster when the game is decided or
+ * short of time. A long think from the player hints at a critical position; a piece given away earns a short
+ * "is it a trap?" pause; now and then a long think for no visible reason, so there is no pattern to read.
+ * `avgMs` is the bot's time per move from the settings. Cosmetic only: the move is already chosen.
+ */
+export function thinkTime(o: {
+  top: number; legal: number; avgMs: number; clockMs: number; freePlies: number;
+  /** the bot's evaluation (centipawns, its side) */
+  evalCp?: number;
+  /** the player has just given material away */
+  gift?: boolean;
+  /** the player's last thinking time, and their usual one in this game */
+  userMs?: number; userTypicalMs?: number;
+}, rnd: () => number = Math.random): number {
   const f = o.top >= 0.9 ? 0.3 : o.top >= 0.75 ? 0.5 : o.top >= 0.5 ? 0.85 : o.top >= 0.3 ? 1.2 : 1.6;
-  let t = o.avgMs * f * (o.freePlies <= 1 ? 1.3 : 1) * Math.exp(0.3 * gauss(rnd));
-  t = clamp(t, 450, o.avgMs * 3);
+  let t = o.avgMs * f * (o.freePlies <= 1 ? 1.3 : 1);
+  const e = Math.abs(o.evalCp ?? 0);
+  if (e >= 500) t *= 0.6; else if (e >= 300) t *= 0.8;
+  if (o.userMs && o.userTypicalMs && o.userMs > 8000 && o.userMs > 2.5 * o.userTypicalMs) t *= 1.15 + 0.3 * rnd();
+  if (o.gift) t += o.avgMs * (0.3 + 0.7 * rnd());
+  t *= Math.exp(0.4 * gauss(rnd));
+  if (rnd() < 0.05) t *= 2;
+  t = clamp(t, 450, o.avgMs * 3.5);
   if (o.legal <= 1) t = Math.min(t, 500);
   if (o.clockMs < 60_000) t = Math.min(t, o.clockMs / 25);
   if (o.clockMs < 20_000) t = Math.min(t, 900);

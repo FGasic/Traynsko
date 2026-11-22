@@ -1,6 +1,7 @@
 // Pure checks of Trayner's choice (human.ts) and of the Maia encoding (maia.ts).
-import { chooseHuman, consideredMoves, humanParams, thinkTime, type HumanInput } from '../src/lib/human';
+import { chooseHuman, consideredMoves, humanParams, searchTime, thinkTime, type HumanInput } from '../src/lib/human';
 import { boardPlanes, historyTokens, maiaElo, moveIndex } from '../src/lib/maia';
+import { RECENT_MAX, RIVALS, randomRival, rememberRival } from '../src/lib/rivals';
 import { humanScores } from '../src/lib/trayner';
 
 let ok = 0, bad = 0;
@@ -108,6 +109,33 @@ const pol = (o: Record<string, number>) => Object.entries(o).map(([uci, p]) => (
   check(obvious < 1300 && unclear > 4000, `obvious ≈${obvious.toFixed(0)} ms, unclear ≈${unclear.toFixed(0)} ms`);
   check(avg({ ...base, top: 0.2, clockMs: 15_000 }) <= 900, 'fast when short of time');
   check(avg({ ...base, top: 0.2, legal: 1 }) <= 500, 'a forced move is quick');
+}
+// 11b. Thinking time reacts to the game; the search doesn't follow it.
+{
+  const r = rng(11);
+  const avg = (o: any) => { let s = 0; for (let i = 0; i < 2000; i++) s += thinkTime(o, r); return s / 2000; };
+  const base = { legal: 30, avgMs: 3000, clockMs: 600_000, freePlies: 10, top: 0.4 };
+  const even = avg({ ...base, evalCp: 20 }), decided = avg({ ...base, evalCp: 700 });
+  check(decided < 0.75 * even, `a decided game is played faster (≈${decided.toFixed(0)} vs ≈${even.toFixed(0)} ms)`);
+  const plain = avg({ ...base, top: 0.95 }), gift = avg({ ...base, top: 0.95, gift: true });
+  check(gift > plain + 1000, `material given away: a pause before taking (≈${gift.toFixed(0)} vs ≈${plain.toFixed(0)} ms)`);
+  const calm = avg({ ...base, userMs: 30_000, userTypicalMs: 20_000 }), tense = avg({ ...base, userMs: 60_000, userTypicalMs: 8000 });
+  check(tense > 1.1 * calm, `a long think from the player is noticed (≈${tense.toFixed(0)} vs ≈${calm.toFixed(0)} ms)`);
+  const s1 = searchTime({ top: 0.4, legal: 30, avgMs: 3000, clockMs: 600_000 }), s2 = searchTime({ top: 0.95, legal: 30, avgMs: 3000, clockMs: 600_000 });
+  check(s1 === 0.85 * 3000 && s2 < s1 && searchTime({ top: 0.4, legal: 30, avgMs: 3000, clockMs: 15_000 }) <= 500, 'search: fixed per kind of move, shorter when obvious or short of time');
+}
+// 11c. Rivals: a grandmaster at random for each game, not one of the latest.
+{
+  check(RIVALS.length > 2000 && new Set(RIVALS).size === RIVALS.length && RIVALS.every((n) => n.length <= 40), `rivals: ${RIVALS.length}, no repeats, short names`);
+  const r = rng(13);
+  let recent: string[] = [];
+  const drawn: string[] = [];
+  for (let i = 0; i < 400; i++) { const n = randomRival(recent, r); drawn.push(n); recent = rememberRival(recent, n); }
+  check(new Set(drawn).size === 400 && RIVALS.includes(drawn[0]), '400 games, 400 different rivals');
+  check(recent.length === 400 && recent[0] === drawn[399], 'the newest rival goes first');
+  for (let i = 0; i < 300; i++) recent = rememberRival(recent, randomRival(recent, r));
+  check(recent.length === RECENT_MAX, `the recent list stops at ${RECENT_MAX}`);
+  check(['A', 'B'].includes(randomRival(['A', 'B'], r, ['A', 'B'])), 'every name recent: still a rival');
 }
 // 12. Deep and shallow scores from the two searches.
 {

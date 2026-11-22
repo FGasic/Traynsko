@@ -5,7 +5,10 @@
 import type { Candidate } from './bots';
 import type { Analysis, Engine } from './engine';
 import { maiaElo, type Maia } from './maia';
-import { chooseHuman, consideredMoves, humanParams, thinkTime, type HumanChoice } from './human';
+import { chooseHuman, consideredMoves, humanParams, searchTime, thinkTime, type HumanChoice } from './human';
+
+/** A jump of at least this much in the bot's favour since its last move: the player gave material away. */
+const GIFT_CP = 200;
 
 export interface TraynerMove {
   uci: string;
@@ -26,7 +29,12 @@ export async function traynerMove(o: {
   waitMs: number;
   /** true once the position has changed (the game moved on): stop */
   stale(): boolean;
-  /** fixed thinking time, for comparisons */
+  /** the bot's evaluation after its previous move (its side), to notice material given away */
+  prevEval?: number | null;
+  /** the player's last thinking time, and their usual one in this game */
+  userMs?: number;
+  userTypicalMs?: number;
+  /** fixed thinking time, for comparisons (it also fixes the search, as before) */
   thinkMs?: number;
   rnd?: () => number;
 }): Promise<TraynerMove> {
@@ -36,15 +44,22 @@ export async function traynerMove(o: {
   const maiaMs = Math.round(performance.now() - t0);
   if (o.stale()) throw new Error('stale');
   const top = policy.moves[0]?.p ?? 1;
-  const think = o.thinkMs ?? thinkTime({ top, legal: policy.moves.length, avgMs: o.avgMs, clockMs: o.clockMs, freePlies: o.freePlies }, o.rnd);
-  const a = await o.engine.analyse(fen, Math.max(250, think * 0.55));
+  const legal = policy.moves.length;
+  // the search never depends on the thinking time shown: thinking longer doesn't play stronger
+  const search = o.thinkMs !== undefined ? o.thinkMs * 0.85 : searchTime({ top, legal, avgMs: o.avgMs, clockMs: o.clockMs });
+  const a = await o.engine.analyse(fen, Math.max(250, search * 0.65));
   if (o.stale()) throw new Error('stale');
   const best = a.cands.reduce((x, y) => (y.cp > x.cp ? y : x));
   const set = [...new Set([...consideredMoves(policy.moves), best.uci])];
-  const b = await o.engine.analyse(fen, Math.max(200, think * 0.3), set);
+  const b = await o.engine.analyse(fen, Math.max(200, search * 0.35), set);
   if (o.stale()) throw new Error('stale');
   const { deep, shallow } = humanScores(a, b, best, set, humanParams(o.elo).depthSeen);
   const choice = chooseHuman({ policy: policy.moves, best: { uci: best.uci, cp: best.cp }, deep, shallow, elo: o.elo }, o.rnd);
+  const gift = o.prevEval != null && best.cp - o.prevEval >= GIFT_CP;
+  const think = o.thinkMs ?? thinkTime({
+    top, legal, avgMs: o.avgMs, clockMs: o.clockMs, freePlies: o.freePlies,
+    evalCp: best.cp, gift, userMs: o.userMs, userTypicalMs: o.userTypicalMs,
+  }, o.rnd);
   return { uci: choice.uci, botEval: best.cp, thinkMs: think + maiaMs, maiaMs, top, why: choice.why, table: choice.table };
 }
 

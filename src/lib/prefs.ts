@@ -93,6 +93,9 @@ export const prefs = {
   /** Chapters unfolded in the Biblioteca, per repertoire. */
   libOpen: (worldId: string) => get<Record<string, string[]>>('libOpen', {})[worldId] ?? null,
   saveLibOpen: (worldId: string, ids: string[]) => put('libOpen', { ...get<Record<string, string[]>>('libOpen', {}), [worldId]: ids }),
+  /** Trayner's latest rivals on this device, newest first (so a name doesn't come back soon). */
+  recentRivals: () => get<string[]>('rivals', []),
+  saveRecentRivals: (list: string[]) => put('rivals', list),
   lastName: () => get<string>('name', ''),
   saveLastName: (n: string) => put('name', n),
 };
