@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { Icon, Segmented, Toggle } from './parts';
 import { sound } from '../lib/sound';
 import { TIME_PRESETS as PRESETS, type Settings, type UserSession } from '../lib/prefs';
@@ -6,15 +6,20 @@ import { api } from '../lib/api';
 import { lichessProfile } from '../lib/lichess';
 import type { PublicWorld } from '../../shared/types';
 import { Emblem } from './Emblem';
+import type { Reward } from '../../shared/campaign';
 
-const THEMES: { id: Settings['boardTheme']; label: string }[] = [
+const THEMES: { id: Settings['boardTheme']; label: string; reward?: Reward }[] = [
   { id: 'imperio', label: 'Imperio' },
   { id: 'nogal', label: 'Nogal' },
   { id: 'torneo', label: 'Torneo' },
   { id: 'pizarra', label: 'Pizarra' },
+  // earned with 7 days in a row of Campaign
+  { id: 'campana', label: 'Campaña', reward: 'board-campana' },
 ];
 
 interface Props {
+  /** rewards earned with the Campaign's streak */
+  rewards: Reward[];
   settings: Settings;
   onUpdate(p: Partial<Settings>): void;
   world: PublicWorld;
@@ -121,12 +126,16 @@ export function SettingsScreen(props: Props) {
       <section class="panel settings">
         <h2 class="section-title">Tablero</h2>
         <div class="swatches" role="radiogroup" aria-label="Colores del tablero">
-          {THEMES.map((t) => (
-            <button type="button" role="radio" aria-checked={s.boardTheme === t.id} class={`swatch theme-${t.id} ${s.boardTheme === t.id ? 'active' : ''}`} onClick={() => onUpdate({ boardTheme: t.id })}>
-              <span class="swatch-board" aria-hidden="true"><i /><i /><i /><i /></span>
-              <span>{t.label}</span>
-            </button>
-          ))}
+          {THEMES.map((t) => {
+            const locked = !!t.reward && !props.rewards.includes(t.reward);
+            return (
+              <button type="button" role="radio" aria-checked={s.boardTheme === t.id} disabled={locked} title={locked ? 'Se gana con 7 días seguidos de Campaña' : undefined}
+                class={`swatch theme-${t.id} ${s.boardTheme === t.id ? 'active' : ''} ${locked ? 'locked' : ''}`} onClick={() => onUpdate({ boardTheme: t.id })}>
+                <span class="swatch-board" aria-hidden="true"><i /><i /><i /><i /></span>
+                <span>{locked ? <><Icon name="lock" size={12} /> {t.label}</> : t.label}</span>
+              </button>
+            );
+          })}
         </div>
         <div class="toggle-row"><span>Coordenadas</span><Toggle id="coords" checked={s.coords} label="Coordenadas" onChange={(v) => onUpdate({ coords: v })} /></div>
         <div class="toggle-row">
@@ -150,6 +159,13 @@ function AccountPanel(p: Props & { user: UserSession }) {
   const [preview, setPreview] = useState<{ name: string; games: number; claimed: 'you' | 'other' | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; bad?: boolean } | null>(null);
+  const [hideRank, setHideRank] = useState<boolean | null>(null);
+  useEffect(() => { api.me().then((r) => setHideRank(r.hideRank)).catch(() => setHideRank(false)); }, [p.user.id]);
+  async function toggleRank(show: boolean) {
+    const prev = hideRank;
+    setHideRank(!show);
+    try { await api.setHideRank(!show); } catch (err: any) { setHideRank(prev); if (!p.onAuthError(err)) setMsg({ text: err.message, bad: true }); }
+  }
 
   async function look(e: Event) {
     e.preventDefault();
@@ -185,6 +201,11 @@ function AccountPanel(p: Props & { user: UserSession }) {
           <a class="btn ghost small" href={lichessProfile(p.user.name)} target="_blank" rel="noopener noreferrer"><Icon name="external" size={16} />Perfil</a>
         </div>
         <p class="help">Traynsko solo guarda tu nombre de usuario de Lichess, las partidas que decides guardar y tus emblemas. No tiene acceso a tu correo, tu contraseña ni tu cuenta de Lichess.</p>
+        <div class="toggle-row">
+          <span>Aparecer en los rankings de Netero</span>
+          <Toggle id="show-rank" checked={hideRank === false} label="Aparecer en los rankings de Netero" onChange={toggleRank} />
+        </div>
+        <p class="help">En los repertorios compartidos, tu mejor nota de Netero completo puede salir en el Top 3 con tu nombre de Lichess. Si lo desactivas, conservas tus récords pero no apareces.</p>
         <div class="row-actions">
           <button type="button" class="btn ghost small" onClick={p.onLogout}><Icon name="logout" size={16} />Cerrar sesión</button>
           <button type="button" class="btn ghost small" onClick={p.onLogoutAll}>Cerrar sesión en todos los dispositivos</button>

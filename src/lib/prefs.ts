@@ -1,8 +1,8 @@
 // Per-device storage: training preferences, the open world session and the master session.
 import { DEFAULT_BOTS } from './bots';
 import type { PublicWorld } from '../../shared/types';
-import { NETERO } from '../../shared/netero';
 import type { Snapshot } from './netero';
+import type { CampaignLocal } from './campaign';
 
 export interface Settings {
   v: number;
@@ -14,7 +14,8 @@ export interface Settings {
   elo: number;
   botMoveSec: number;
   enabledBots: string[];
-  boardTheme: 'nogal' | 'torneo' | 'pizarra' | 'imperio';
+  /** `campana`: earned with a 7-day Campaign streak */
+  boardTheme: 'nogal' | 'torneo' | 'pizarra' | 'imperio' | 'campana';
   sound: boolean;
   coords: boolean;
   /** Play the repertoire's side, or the other one (the user plays the line's replies). */
@@ -26,8 +27,6 @@ export interface Settings {
   lastLineId?: string;
   /** chapters switched off, per world: superseded by the selection of lines (read once, to carry it over) */
   disabledReps: Record<string, string[]>;
-  /** Modo Netero: lines in a daily session */
-  neteroDaily: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -47,7 +46,6 @@ export const DEFAULT_SETTINGS: Settings = {
   lineOrder: 'random',
   orderAt: {},
   disabledReps: {},
-  neteroDaily: NETERO.dailyDefault,
 };
 
 /** Quick time controls (minutes + increment in seconds). */
@@ -104,6 +102,9 @@ export const prefs = {
   /** Modo Netero: the session in progress in a repertoire, saved after every move (to resume after closing). */
   netero: (worldId: string) => get<Snapshot | null>('netero:' + worldId, null),
   saveNetero: (worldId: string, s: Snapshot | null) => put('netero:' + worldId, s),
+  /** The Campaign of the day in a repertoire, as it stands on this device. */
+  campaign: (worldId: string) => get<CampaignLocal | null>('campaign:' + worldId, null),
+  saveCampaign: (worldId: string, c: CampaignLocal | null) => put('campaign:' + worldId, c),
   lastName: () => get<string>('name', ''),
   saveLastName: (n: string) => put('name', n),
 };

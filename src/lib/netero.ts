@@ -75,8 +75,8 @@ export function planFull(reps: Repertoire[], off: Set<string>, scope: NeteroScop
   };
 }
 
-/** Netero diario: `n` active lines, those in the review queue first, the rest at random. */
-export function planDaily(reps: Repertoire[], off: Set<string>, n: number, queue: string[], rng: Rng = Math.random): Plan {
+/** `n` active lines, those in the review queue first, the rest at random (the Campaign's memory phase). */
+export function planDaily(reps: Repertoire[], off: Set<string>, n: number, queue: string[], rng: Rng = Math.random, mode: NeteroMode = 'daily'): Plan {
   const active = scopeItems(reps, null).filter((x) => !off.has(x.key) && playable(x));
   const byKey = new Map(active.map((x) => [x.key, x]));
   const picked: PlanLine[] = [];
@@ -89,7 +89,16 @@ export function planDaily(reps: Repertoire[], off: Set<string>, n: number, queue
     if (picked.length >= n) break;
     picked.push(x);
   }
-  return { mode: 'daily', scope: null, fp: null, eligible: false, lines: shuffle(picked, rng), inScope: active.length, activeInScope: active.length };
+  return { mode, scope: null, fp: null, eligible: false, lines: shuffle(picked, rng), inScope: active.length, activeInScope: active.length };
+}
+
+/** The Campaign's memory phase: 3 lines (the review queue first). */
+export const planCampaign = (reps: Repertoire[], off: Set<string>, queue: string[], n = 3, rng: Rng = Math.random) => planDaily(reps, off, n, queue, rng, 'campaign');
+
+/** The same lines again, from their keys (a memory phase restarted after its session was lost). */
+export function planFromKeys(reps: Repertoire[], keys: string[], mode: NeteroMode, rng: Rng = Math.random): Plan {
+  const p = planErrors(reps, keys, rng);
+  return { ...p, mode };
 }
 
 /** Repetir errores: the lines given (those with fails in the session just finished). */

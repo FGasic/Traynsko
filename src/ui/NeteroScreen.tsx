@@ -3,14 +3,21 @@ import type { Api } from 'chessground/api';
 import type { Key } from 'chessground/types';
 import { Chess, SQUARES, type Move, type Square } from 'chess.js';
 import { Board } from './Board';
-import { Icon, Segmented } from './parts';
-import { MedalBadge, RecordFacts } from './Atlas';
+import { Icon } from './parts';
+import { RecordFacts, TopThree } from './Atlas';
 import type { AwardResult } from './TrainScreen';
 import type { Line, RepMeta, Repertoire } from '../../shared/types';
 import { lineFingerprint } from '../../shared/atlas';
-import { NETERO, liveStreak, localDay, notaText, recordFor, type NeteroRecord, type NeteroScope, type NeteroState, type NeteroSummary } from '../../shared/netero';
+import { localDay, notaText, recordFor, topKey, type NeteroRecord, type NeteroScope, type NeteroState, type NeteroSummary } from '../../shared/netero';
+import { CAMPAIGN, type CampaignFinish, type CampaignOutcome, type CampaignView } from '../../shared/campaign';
+import { lineKey } from '../../shared/picks';
+import { CampaignCard, CampaignGame, CampaignResultSheet, type GameEnd } from './Campaign';
+import { liveCampaign, type CampaignLocal } from '../lib/campaign';
+import type { Maia } from '../lib/maia';
+import type { SaveResult } from './TrainScreen';
+import { randomRival, rememberRival } from '../lib/rivals';
 import {
-  NeteroRun, deviceKind, fmtDuration, fmtSec, planDaily, planErrors, planFull,
+  NeteroRun, deviceKind, fmtDuration, fmtSec, planCampaign, planErrors, planFromKeys, planFull,
   type FailEntry, type LineEnd, type Plan,
 } from '../lib/netero';
 import type { NeteroResult } from '../lib/api';
@@ -31,8 +38,10 @@ interface Props {
   linesLoaded: boolean;
   playerName: string;
   account: boolean;
+  /** the Lichess id of the account (to mark its place in a Top 3) */
+  userId: string | null;
   signingIn: boolean;
-  /** records, best times, review queue and streak (null: no account, or not loaded yet) */
+  /** records, best times, review queue and Top 3 lists (null: no account, or not loaded yet) */
   netero: NeteroState | null;
   neteroError: string | null;
   onRetryLoad(): void;
@@ -43,6 +52,15 @@ interface Props {
   onUpdateSettings(p: Partial<Settings>): void;
   onLogin(): void;
   goTo(tab: string): void;
+  /** the Campaign: its state on the server (null: no account, or not loaded yet) */
+  campaign: CampaignView | null;
+  campaignError: string | null;
+  onRetryCampaign(): void;
+  /** Sends the day's game result; resolves with the server's answer. */
+  onFinishCampaign(f: CampaignFinish): Promise<CampaignOutcome>;
+  onSaveGame(g: GameEnd['game']): Promise<SaveResult>;
+  /** the network behind Trayner, shared with Entrenar */
+  maia: () => Maia;
 }
 
 /** The rival's reply of the line, and the first move of a line. */
@@ -51,7 +69,7 @@ const AUTO_FIRST_MS = 480;
 /** The pause between lines, long enough to read the banner. */
 const BETWEEN_MS = { clean: 1100, repeat: 1700, finish: 700 };
 
-const MODE_NAME = { full: 'Netero completo', daily: 'Netero diario', errors: 'Repetir errores' } as const;
+const MODE_NAME = { full: 'Netero completo', daily: 'Netero diario', errors: 'Repetir errores', campaign: 'Campaña · memoria' } as const;
 const colorName = (c: 'w' | 'b') => (c === 'w' ? 'white' : 'black');
 
 function destsOf(chess: Chess): Map<Key, Key[]> {
@@ -113,11 +131,18 @@ export function NeteroScreen(p: Props) {
   }, [p.reps, p.off, p.worldId, p.worldName]);
   const records = p.netero?.records ?? [];
   const today = localDay();
-  const streak = liveStreak(p.netero?.streak ?? null, today);
+  // the Campaign kept on this device: today's (or yesterday's, if it is still being played)
+  const [camp, setCampState] = useState<CampaignLocal | null>(() => liveCampaign(prefs.campaign(p.worldId), p.worldId, localDay()));
+  const campRef = useRef(camp);
+  campRef.current = camp;
+  const setCamp = (c: CampaignLocal | null) => { campRef.current = c; prefs.saveCampaign(pRef.current.worldId, c); setCampState(c); };
+  const [showGame, setShowGame] = useState(false);
+  const [memoryDone, setMemoryDone] = useState<{ nota: number; fails: number; list: FailEntry[] } | null>(null);
+  const [campSave, setCampSave] = useState<{ saving: boolean; error: string | null; open: boolean }>({ saving: false, error: null, open: false });
 
   // a session saved on this device: it can be resumed while its lines are still in the repertoire
   const resumable = useMemo(() => {
-    if (!saved || !p.linesLoaded || run.current) return null;
+    if (!saved || !p.linesLoaded || run.current || saved.mode === 'campaign') return null;
     return NeteroRun.restore(saved, p.reps);
   }, [saved, p.linesLoaded, p.reps, r]);
 
@@ -288,7 +313,13 @@ export function NeteroScreen(p: Props) {
     bump();
   }
 
+  /** Leave a session: in the Campaign's memory phase, the day's Campaign goes too (it can be started again). */
   function quit() {
+    if (run.current?.plan.mode === 'campaign' && campRef.current?.phase === 'memory') setCamp(null);
+    closeRun();
+  }
+
+  function closeRun() {
     clearTimeout(timer.current);
     run.current = null;
     cg.current = null;   // the board goes away with the session
@@ -315,6 +346,7 @@ export function NeteroScreen(p: Props) {
     sync();
     const summary = x.summary(deviceKind(), localDay());
     const live = x.live;
+    if (x.plan.mode === 'campaign') { memoryPhaseDone(x, summary); return; }
     const rep: Report = {
       plan: x.plan, summary,
       score: { nota: live.nota, precision: live.precision, ritmo: live.ritmo, meanMs: live.nodes ? live.thinkMs / live.nodes : 0 },
@@ -324,6 +356,85 @@ export function NeteroScreen(p: Props) {
     setReport(rep);
     bump();
     if (pRef.current.account) save(rep);
+  }
+
+  /* ---------- the Campaign ---------- */
+  function startCampaign(startLevel?: number) {
+    const v = pRef.current.campaign;
+    if (!v) return;
+    const plan = planCampaign(pRef.current.reps, pRef.current.off, pRef.current.netero?.queue ?? []);
+    if (!plan.lines.length) return;
+    setCamp({
+      v: 1, worldId: pRef.current.worldId, day: localDay(), phase: 'memory', lines: plan.lines.map((x) => x.key),
+      nota: null, fails: 0, gameLine: null, rival: '', level: v.campaign?.level ?? startLevel ?? CAMPAIGN.startDefault,
+      ...(v.campaign ? {} : { start: startLevel ?? CAMPAIGN.startDefault }),
+    });
+    start(plan);
+  }
+
+  function continueCampaign() {
+    const c = campRef.current;
+    if (!c) return;
+    if (c.phase === 'memory') {
+      const snap = prefs.netero(pRef.current.worldId);
+      const back = snap && snap.mode === 'campaign' ? NeteroRun.restore(snap, pRef.current.reps) : null;
+      if (back) { best.current = { ...(pRef.current.netero?.best ?? {}) }; run.current = back; setReport(null); sync(); bump(); return; }
+      const plan = planFromKeys(pRef.current.reps, c.lines, 'campaign');
+      if (plan.lines.length) start(plan); else setCamp(null);
+      return;
+    }
+    if (c.phase === 'game') { setShowGame(true); return; }
+    if (c.phase === 'saving') { setShowGame(true); sendFinish(); }
+  }
+
+  /** The memory phase is over: the game's line and rival are drawn, and the result goes to the server in the background. */
+  function memoryPhaseDone(x: NeteroRun, summary: NeteroSummary) {
+    const live = x.live;
+    const keys = x.plan.lines.map((l) => l.key);
+    const recent = prefs.recentRivals();
+    const rival = randomRival(recent);
+    prefs.saveRecentRivals(rememberRival(recent, rival));
+    const c = campRef.current;
+    setCamp({
+      ...(c ?? { v: 1, worldId: pRef.current.worldId, day: localDay(), lines: keys, level: CAMPAIGN.startDefault }),
+      phase: 'game', nota: live.nota, fails: x.fails, gameLine: keys[Math.floor(Math.random() * keys.length)], rival, game: undefined,
+    } as CampaignLocal);
+    setMemoryDone({ nota: live.nota, fails: x.fails, list: x.failList });
+    if (pRef.current.account) pRef.current.onSave(summary).catch(() => { /* best times and the review queue: not essential */ });
+    bump();
+  }
+
+  function playCampaignGame() {
+    setMemoryDone(null);
+    closeRun();
+    setShowGame(true);
+  }
+
+  function gameEnded(e: GameEnd) {
+    const c = campRef.current;
+    if (!c) return;
+    setCamp({ ...c, phase: 'saving', finish: { result: e.result, moves: e.moves, resigned: e.resigned }, game: undefined });
+    pRef.current.onSaveGame(e.game).catch(() => { /* the Campaign's result still goes */ });
+    sendFinish();
+  }
+
+  async function sendFinish() {
+    const c = campRef.current;
+    if (!c?.finish) return;
+    setCampSave({ saving: true, error: null, open: true });
+    try {
+      const outcome = await pRef.current.onFinishCampaign({ day: c.day, ...c.finish, rival: c.rival, nota: c.nota, ...(c.start ? { start: c.start } : {}) });
+      setCamp({ ...campRef.current!, phase: 'done', outcome });
+      setCampSave({ saving: false, error: null, open: true });
+    } catch (e: any) {
+      if (e?.code === 'campaign_done') { setCamp({ ...campRef.current!, phase: 'done' }); setCampSave({ saving: false, error: null, open: true }); }
+      else setCampSave({ saving: false, error: e?.message ?? 'No se pudo guardar la Campaña.', open: true });
+    }
+  }
+
+  function closeCampaignResult() {
+    setCampSave({ saving: false, error: null, open: false });
+    setShowGame(false);
   }
 
   async function save(rep: Report) {
@@ -418,18 +529,66 @@ export function NeteroScreen(p: Props) {
     return <div class="netero-lobby"><div class="page-inner"><div class="loading"><div class="spinner" />Preparando tu repertorio…</div></div></div>;
   }
 
+  if (showGame && camp?.gameLine && camp.phase !== 'memory') {
+    const item = gameItem(p.reps, camp.gameLine);
+    if (!item) {
+      return (
+        <div class="netero-lobby"><div class="page-inner">
+          <div class="empty">
+            <h2>La línea de la partida ya no está</h2>
+            <p>El repertorio cambió desde que empezaste esta Campaña. Puedes empezarla de nuevo.</p>
+            <button type="button" class="btn primary" onClick={() => { setCamp(null); setShowGame(false); }}>Volver</button>
+          </div>
+        </div></div>
+      );
+    }
+    return (
+      <>
+        <CampaignGame
+          key={`${camp.day}:${camp.gameLine}`}
+          active={p.active}
+          settings={p.settings}
+          rep={item.rep}
+          line={item.line}
+          rival={camp.rival}
+          level={camp.level}
+          playerName={p.playerName}
+          maia={p.maia}
+          restore={camp.game}
+          onSnapshot={(g) => { const c = campRef.current; if (c && c.phase === 'game') setCamp({ ...c, game: g }); }}
+          onEnd={gameEnded}
+        />
+        {campSave.open && camp.finish && (
+          <CampaignResultSheet
+            local={camp}
+            view={p.campaign}
+            today={today}
+            saving={campSave.saving}
+            error={campSave.error}
+            onRetry={sendFinish}
+            onClose={closeCampaignResult}
+            onGames={() => { closeCampaignResult(); p.goTo('games'); }}
+            onAtlas={() => { closeCampaignResult(); p.goTo('atlas'); }}
+          />
+        )}
+      </>
+    );
+  }
+
   if (!r) {
     return (
       <Lobby
         {...p}
         scopes={scopes}
         records={records}
-        streak={streak}
         resumable={resumable}
+        camp={camp}
+        today={today}
+        onStartCampaign={startCampaign}
+        onContinueCampaign={continueCampaign}
         onResume={resumeSaved}
         onDiscard={forget}
         onStart={start}
-        onDaily={() => start(planDaily(p.reps, p.off, p.settings.neteroDaily || NETERO.dailyDefault, p.netero?.queue ?? []))}
       />
     );
   }
@@ -507,12 +666,20 @@ export function NeteroScreen(p: Props) {
             </div>
           )}
           {banner && <div class={`banner nt-banner ${banner.kind}`} role="status">{banner.text}</div>}
+          {memoryDone && (
+            <MemoryDoneSheet
+              done={memoryDone}
+              rival={camp?.rival ?? ''}
+              level={camp?.level ?? CAMPAIGN.startDefault}
+              onPlay={playCampaignGame}
+              onLater={() => { setMemoryDone(null); closeRun(); }}
+            />
+          )}
           {report && (
             <ReportSheet
               report={report}
               account={p.account}
               signingIn={p.signingIn}
-              streak={p.netero?.streak ?? null}
               onRetry={() => save(report)}
               onLogin={p.onLogin}
               onAgain={() => start(planErrors(p.reps, report.summary.failed))}
@@ -610,18 +777,20 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 function Lobby(props: Props & {
   scopes: { scope: NeteroScope; plan: Plan }[];
   records: NeteroRecord[];
-  streak: { cur: number; best: number; doneToday: boolean };
   resumable: NeteroRun | null;
+  camp: CampaignLocal | null;
+  today: string;
+  onStartCampaign(start?: number): void;
+  onContinueCampaign(): void;
   onResume(): void;
   onDiscard(): void;
   onStart(plan: Plan): void;
-  onDaily(): void;
 }) {
-  const { scopes, records, streak, resumable } = props;
+  const { scopes, records, resumable } = props;
   const [askDiscard, setAskDiscard] = useState(false);
   const activeLines = scopes[0].plan.lines.length;
-  const daily = props.settings.neteroDaily || NETERO.dailyDefault;
   const locked = !!resumable;
+  const me = props.userId ?? undefined;
   return (
     <div class="netero-lobby">
       <div class="page-inner">
@@ -632,6 +801,20 @@ function Lobby(props: Props & {
             <p class="lede">Juega cada línea desde la jugada 1. Si fallas, la repites desde el principio hasta hacerla sin errores. La primera pasada es el examen: solo ella puntúa.</p>
           </div>
         </header>
+
+        <CampaignCard
+          account={props.account}
+          signingIn={props.signingIn}
+          onLogin={props.onLogin}
+          view={props.campaign}
+          error={props.campaignError}
+          onRetry={props.onRetryCampaign}
+          local={props.camp}
+          today={props.today}
+          hasLines={activeLines > 0}
+          onStart={props.onStartCampaign}
+          onContinue={props.onContinueCampaign}
+        />
 
         {resumable && (
           <section class="panel nt-resume" aria-label="Sesión en curso">
@@ -679,6 +862,7 @@ function Lobby(props: Props & {
               <ul class="nt-scopes">
                 {scopes.map(({ scope, plan }) => {
                   const { current, previous } = plan.fp ? recordFor(records, scope, plan.fp) : { current: null, previous: null };
+                  const top = plan.fp ? props.netero?.tops[topKey(scope.kind, plan.fp)] : undefined;
                   const playable = plan.lines.length;
                   return (
                     <li class="nt-scope">
@@ -696,26 +880,12 @@ function Lobby(props: Props & {
                       <button type="button" class="btn primary small" disabled={!playable || locked} onClick={() => props.onStart(planFull(props.reps, props.off, scope))}>
                         <Icon name="play" size={16} />Empezar
                       </button>
+                      <TopThree entry={top} me={me} />
                     </li>
                   );
                 })}
               </ul>
               {scopes[0].plan.eligible ? null : <p class="help">Con líneas desactivadas en la Biblioteca la sesión cuenta como práctica: muestra la nota, pero no genera récord.</p>}
-            </section>
-
-            <section class="panel nt-card">
-              <div class="panel-head">
-                <h2 class="section-title">Netero diario</h2>
-                <span class="nt-streak" title="Días seguidos con al menos un Netero diario">
-                  Racha <b>{streak.cur}</b> {streak.cur === 1 ? 'día' : 'días'} · mejor {streak.best}
-                </span>
-              </div>
-              <p class="help">Líneas al azar de las activas; primero, las que fallaste hace poco. Completar un diario al día mantiene la racha.</p>
-              <div class="row-actions nt-daily">
-                <Segmented id="nt-daily-n" value={String(daily)} options={NETERO.dailyOptions.map((n) => ({ value: String(n), label: `${n} líneas` }))} onChange={(v) => props.onUpdateSettings({ neteroDaily: Number(v) })} />
-                <button type="button" class="btn primary" disabled={locked} onClick={props.onDaily}><Icon name="play" size={18} />Empezar diario</button>
-              </div>
-              {props.account && streak.doneToday && <p class="nt-done"><Icon name="check" size={16} />Hoy ya cumpliste: los siguientes diarios cuentan como práctica.</p>}
             </section>
             {locked && <p class="help">Continúa o abandona la sesión en curso para empezar otra.</p>}
           </>
@@ -725,8 +895,55 @@ function Lobby(props: Props & {
   );
 }
 
-function ReportSheet({ report, account, signingIn, streak, onRetry, onLogin, onAgain, onLobby, onAtlas }: {
-  report: Report; account: boolean; signingIn: boolean; streak: { cur: number; best: number; last: string } | null;
+/** The memory phase of the Campaign is over: its nota and fails, then the game. */
+function MemoryDoneSheet({ done, rival, level, onPlay, onLater }: {
+  done: { nota: number; fails: number; list: FailEntry[] }; rival: string; level: number; onPlay(): void; onLater(): void;
+}) {
+  return (
+    <div class="sheet-backdrop">
+      <div class="sheet nt-report" role="dialog" aria-label="Memoria completada">
+        <div class="sheet-result nt-result">
+          <span class="eyebrow">Campaña · memoria completada</span>
+          <span class="nt-nota">{notaText(done.nota)}</span>
+          <span class="result-sub">{done.fails} {done.fails === 1 ? 'fail' : 'fails'} · ahora, la partida</span>
+        </div>
+        {done.list.length > 0 && (
+          <div class="nt-fails-list">
+            <span class="eyebrow">Jugadas falladas</span>
+            <ul>
+              {done.list.map((f) => (
+                <li>
+                  <MiniBoard fen={f.fen} color={f.color} good={f.expected} bad={f.played} />
+                  <div class="nt-fail-text">
+                    <span class="nt-fail-move">Correcta: <b>{f.expectedSan}</b></span>
+                    <span class="nt-fail-played">Jugaste: {f.playedSan}{f.count > 1 ? ` · ×${f.count}` : ''}</span>
+                    <small>{f.title}</small>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div class="save-ask camp-next-game">
+          <p class="save-msg">Una de las 3 líneas sigue contra <b>{rival}</b> ({level}), {CAMPAIGN.baseMin}+{CAMPAIGN.incSec}, desde donde termina la teoría.</p>
+        </div>
+        <div class="sheet-foot">
+          <button type="button" class="btn ghost" onClick={onLater}>Más tarde</button>
+          <button type="button" class="btn primary" onClick={onPlay}><Icon name="play" size={18} />Jugar la partida</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The line of the Campaign's game, by its key. */
+function gameItem(reps: Repertoire[], key: string): { rep: Repertoire; line: Line } | null {
+  for (const rep of reps) for (const line of rep.lines) if (lineKey(line) === key) return { rep, line };
+  return null;
+}
+
+function ReportSheet({ report, account, signingIn, onRetry, onLogin, onAgain, onLobby, onAtlas }: {
+  report: Report; account: boolean; signingIn: boolean;
   onRetry(): void; onLogin(): void; onAgain(): void; onLobby(): void; onAtlas(): void;
 }) {
   const { plan, summary, score, fails, state, result } = report;
@@ -765,20 +982,11 @@ function ReportSheet({ report, account, signingIn, streak, onRetry, onLogin, onA
         )}
         {state === 'guest' && (
           <div class="save-ask">
-            <p class="save-msg">Sin cuenta no se guardan récords ni racha.</p>
+            <p class="save-msg">Sin cuenta no se guardan récords.</p>
             <button type="button" class="btn ghost small" onClick={onLogin} disabled={signingIn}><Icon name="login" size={16} />Entrar con Lichess</button>
           </div>
         )}
-        {state === 'saved' && plan.mode === 'daily' && (
-          <div class={`medal-note ${result?.counted ? 'new' : ''}`}>
-            <MedalBadge state={result?.counted ? 'earned' : 'hidden'} color="w" size={34} />
-            <div class="mn-text">
-              <strong>{result?.counted ? `Racha: ${streak?.cur ?? 1} ${(streak?.cur ?? 1) === 1 ? 'día' : 'días'}` : 'Diario de práctica'}</strong>
-              <span>{result?.counted ? `Mejor racha: ${streak?.best ?? 1}.` : 'Hoy ya habías completado un diario.'}</span>
-            </div>
-          </div>
-        )}
-        {state === 'saved' && plan.mode !== 'daily' && <div class="save-ask"><p class="save-msg good"><Icon name="check" size={16} />Sesión guardada.</p></div>}
+        {state === 'saved' && <div class="save-ask"><p class="save-msg good"><Icon name="check" size={16} />Sesión guardada.</p></div>}
 
         {fails.length > 0 && (
           <div class="nt-fails-list">

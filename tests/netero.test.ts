@@ -1,12 +1,12 @@
-// Modo Netero: scoring, streak and records (shared), the session engine, and the server's endpoints.
+// Modo Netero: scoring and records (shared), the session engine, and the server's endpoints (records, Top 3).
 import { readFileSync } from 'node:fs';
 import { Chess } from 'chess.js';
 import {
-  NETERO, applyRecord, bumpStreak, cleanSummary, liveStreak, neteroScore, nextBest, nextQueue, recordFor, scopeFingerprint,
+  NETERO, applyRecord, cleanSummary, neteroScore, nextBest, nextQueue, recordFor, scopeFingerprint, topOf, updateTop,
   type NeteroRecord, type NeteroSummary,
 } from '../shared/netero';
 import { lineKey } from '../shared/picks';
-import { ANIM_MS, WRONG_MS, NeteroRun, planDaily, planErrors, planFull, userPlies, type Plan } from '../src/lib/netero';
+import { ANIM_MS, WRONG_MS, NeteroRun, planCampaign, planDaily, planErrors, planFromKeys, planFull, userPlies, type Plan } from '../src/lib/netero';
 import type { Line, Repertoire } from '../shared/types';
 import { createApp } from '../server/core';
 import { memoryKV } from '../server/kv';
@@ -60,21 +60,19 @@ function play(run: NeteroRun, clock: { t: number }, think: (i: number) => number
   s = neteroScore(10, 10, 10 * 1500);
   check(s.ritmo === 1 && s.nota === 100, 'faster than t100 scores 100');
   check(neteroScore(0, 0, 0).nota === 0, 'no nodes, no score');
-  check(NETERO.t100Ms === 2000 && NETERO.dailyDefault === 5, 'parameters as specified');
+  check(NETERO.t100Ms === 2000, 'parameters as specified');
 
-  /* ---------- streak ---------- */
-  let st = bumpStreak(null, '2026-11-20');
-  check(st.counted && st.streak.cur === 1 && st.streak.best === 1, 'first daily starts the streak');
-  st = bumpStreak(st.streak, '2026-11-20');
-  check(!st.counted && st.streak.cur === 1, 'a second daily the same day is practice');
-  st = bumpStreak(st.streak, '2026-11-21');
-  check(st.counted && st.streak.cur === 2 && st.streak.best === 2, 'next day adds one');
-  st = bumpStreak(st.streak, '2026-11-24');
-  check(st.counted && st.streak.cur === 1 && st.streak.best === 2, 'a missed day restarts it (best kept)');
-  check(liveStreak(st.streak, '2026-11-25').cur === 1 && !liveStreak(st.streak, '2026-11-25').doneToday, 'streak alive the day after');
-  check(liveStreak(st.streak, '2026-11-26').cur === 0, 'streak broken after a whole day without daily');
-  check(liveStreak(st.streak, '2026-11-24').doneToday, 'done today');
-  check(bumpStreak({ cur: 3, best: 3, last: '2026-12-31' }, '2027-01-01').streak.cur === 4, 'streak across the new year');
+  /* ---------- Top 3 tables ---------- */
+  let tb = updateTop({}, 'ana', { name: 'Ana', nota: 80, device: 'pc', date: '2026-11-01' }).table;
+  tb = updateTop(tb, 'luis', { name: 'Luis', nota: 90, device: 'movil', date: '2026-11-02' }).table;
+  check(!updateTop(tb, 'ana', { name: 'Ana', nota: 79, device: 'pc', date: '2026-11-03' }).changed, 'top: a lower nota does not replace the person\'s best');
+  tb = updateTop(tb, 'ana', { name: 'Ana', nota: 85, device: 'pc', date: '2026-11-03' }).table;
+  tb = updateTop(tb, 'eva', { name: 'Eva', nota: 70, device: 'pc', date: '2026-11-04' }).table;
+  tb = updateTop(tb, 'teo', { name: 'Teo', nota: 60, device: 'pc', date: '2026-11-05' }).table;
+  let tp = topOf(tb, new Set());
+  check(tp.n === 4 && tp.top.map((t) => t.id).join() === 'luis,ana,eva', 'top: three best, one entry per person');
+  tp = topOf(tb, new Set(['luis']));
+  check(tp.n === 3 && tp.top[0].id === 'ana', 'top: people who hide are left out (and not counted)');
 
   /* ---------- records ---------- */
   const rec = (fp: string, nota: number, date: string, scope = WORLD): NeteroRecord => ({ fp, scope, nota, precision: 1, ritmo: 1, nodes: 1, firstTry: 1, thinkMs: 1, totalMs: 1, fails: 0, lines: 1, date, device: 'pc' });
@@ -109,9 +107,12 @@ function play(run: NeteroRun, clock: { t: number }, think: (i: number) => number
   check(partial.lines.length === 2 && !partial.eligible && partial.fp === plan.fp && partial.activeInScope === 2 && partial.inScope === 3, 'full with a line off: practice (no record)');
   const chapter = planFull([...reps, rep('cat', 'Catalana', 'w', [{ id: 'x', event: '', white: 'Cat', black: '', uci: 'd2d4 g8f6 c2c4 e7e6 g2g3' }])], new Set(), { kind: 'rep', id: 'benko1', name: 'Benko Principal' });
   check(chapter.lines.length === 3 && chapter.eligible && chapter.fp === plan.fp, 'chapter scope: only its lines');
-  const daily = planDaily(reps, new Set(), 2, [keys[2], 'zzzzzz'], seeded(3));
-  check(daily.lines.length === 2 && daily.lines.some((x) => x.key === keys[2]) && !daily.eligible && daily.mode === 'daily', 'daily: queue first, then random');
-  check(planDaily(reps, new Set([keys[2]]), 2, [keys[2]], seeded(3)).lines.every((x) => x.key !== keys[2]), 'daily: lines off stay out, even if queued');
+  const daily = planCampaign(reps, new Set(), [keys[2], 'zzzzzz'], 2, seeded(3));
+  check(daily.lines.length === 2 && daily.lines.some((x) => x.key === keys[2]) && !daily.eligible && daily.mode === 'campaign', 'campaign memory: queue first, then random');
+  check(planDaily(reps, new Set([keys[2]]), 2, [keys[2]], seeded(3)).lines.every((x) => x.key !== keys[2]), 'campaign memory: lines off stay out, even if queued');
+  check(planCampaign(reps, new Set(), []).lines.length === 3, 'campaign memory: 3 lines by default');
+  const again = planFromKeys(reps, [keys[0], keys[1]], 'campaign');
+  check(again.mode === 'campaign' && again.lines.length === 2, 'campaign memory: the same lines again from their keys');
   check(planErrors(reps, [keys[0]]).lines.length === 1, 'errors: only the lines given');
   check(userPlies(benko[0], 'b') === 8 && userPlies(benko[0], 'w') === 8 && userPlies(benko[1], 'b') === 5, 'player moves per line');
 
@@ -238,7 +239,7 @@ function play(run: NeteroRun, clock: { t: number }, think: (i: number) => number
   let r = await call('GET', '/api/netero', {}, guest);
   check(r.status === 401, 'netero: needs an account');
   r = await call('GET', '/api/netero', {}, wt, ut);
-  check(r.status === 200 && (r.body as any).netero.records.length === 0 && (r.body as any).netero.streak.cur === 0, 'netero: empty state');
+  check(r.status === 200 && (r.body as any).netero.records.length === 0 && Object.keys((r.body as any).netero.tops).length === 0, 'netero: empty state');
 
   const p1 = planFull(sreps, new Set(), worldScope, seeded(5));
   r = await call('POST', '/api/netero', { session: session(p1, 2500) }, wt, ut);
@@ -265,34 +266,63 @@ function play(run: NeteroRun, clock: { t: number }, think: (i: number) => number
   res = (r.body as any).result;
   check(res.isRecord && res.record.scope.kind === 'rep' && (r.body as any).netero.records.length === 2, 'netero: chapter record kept apart');
   check((r.body as any).netero.queue.length === 0, 'netero: lines done cleanly leave the review queue');
-  // a daily with a fail: the streak starts and the line is queued
-  const pd0 = planDaily(sreps, new Set(), 1, [], seeded(8));
+  // the Campaign's memory phase with a fail: the line is queued, no record
+  const pd0 = planCampaign(sreps, new Set(), [], 1, seeded(8));
   r = await call('POST', '/api/netero', { session: session(pd0, 1000, (i, pass) => (i === 0 && pass === 1 ? 100 : null)) }, wt, ut);
   res = (r.body as any).result;
   const queued = (r.body as any).netero.queue[0];
-  check(res.counted && (r.body as any).netero.streak.cur === 1 && queued === pd0.lines[0].key, 'daily: streak starts, the failed line is queued');
-  // the next daily takes the queued line first; done cleanly, it leaves the queue
-  const pd = planDaily(sreps, new Set(), 1, (r.body as any).netero.queue, seeded(21));
-  check(pd.lines[0].key === queued, 'daily: the queued line comes first');
+  check(!res.recordable && queued === pd0.lines[0].key, 'campaign memory: no record, the failed line is queued');
+  // the next memory phase takes the queued line first; done cleanly, it leaves the queue
+  const pd = planCampaign(sreps, new Set(), (r.body as any).netero.queue, 1, seeded(21));
+  check(pd.lines[0].key === queued, 'campaign memory: the queued line comes first');
   r = await call('POST', '/api/netero', { session: session(pd, 1000) }, wt, ut);
-  check(!(r.body as any).result.counted && (r.body as any).netero.streak.cur === 1, 'daily: a second one the same day does not count');
-  check(!(r.body as any).netero.queue.includes(queued), 'daily: the line done cleanly leaves the queue');
+  check(!(r.body as any).netero.queue.includes(queued), 'campaign memory: the line done cleanly leaves the queue');
+  // an older app's daily Netero is still accepted, as practice
+  r = await call('POST', '/api/netero', { session: { ...session(pd, 1000), mode: 'daily' } }, wt, ut);
+  check(r.status === 200 && !(r.body as any).result.recordable, 'an old daily Netero is practice');
   r = await call('POST', '/api/netero', { session: { ...session(pd, 1000), day: '2020-01-01' } }, wt, ut);
   check(r.status === 400, 'netero: a date far from today is refused');
   r = await call('POST', '/api/netero', { session: { nodes: 3 } }, wt, ut);
   check(r.status === 400, 'netero: invalid session refused');
   r = await call('GET', '/api/netero', {}, wt, ut);
-  check((r.body as any).netero.records.length === 2 && (r.body as any).netero.streak.best === 1, 'netero: state read back');
+  check((r.body as any).netero.records.length === 2, 'netero: state read back');
+  // Top 3: only this account so far (shown from two people on)
+  const wfp = p1.fp!;
+  let top = (r.body as any).netero.tops['world:' + wfp];
+  check(top?.n === 1 && top.top[0].name === 'Netero' && Math.round(top.top[0].nota) === 92, 'top: the best nota of the account (not every session)');
+  // a second account in the same repertoire
+  const ub = ((await call('POST', '/api/auth/lichess', { code: 'Bea', verifier: 'v'.repeat(64), redirectUri: 'https://traynsko.vercel.app/' })).body as any).token;
+  const wb = ((await call('POST', '/api/enter', { password: 'benko-2026' }, undefined, ub)).body as any).entries[0].token;
+  await call('POST', '/api/netero', { session: session(p1, 1500) }, wb, ub);
+  r = await call('GET', '/api/netero', {}, wt, ut);
+  top = (r.body as any).netero.tops['world:' + wfp];
+  check(top.n === 2 && top.top[0].name === 'Bea' && top.top[1].name === 'Netero', 'top: two people, best first');
+  // Bea leaves the rankings: she disappears (and her records stay)
+  r = await call('PATCH', '/api/me', { hideRank: true }, undefined, ub);
+  check(r.status === 200 && (r.body as any).hideRank === true, 'me: hide from rankings');
+  r = await call('GET', '/api/me', {}, undefined, ub);
+  check((r.body as any).hideRank === true, 'me: the choice is kept');
+  r = await call('GET', '/api/netero', {}, wt, ut);
+  top = (r.body as any).netero.tops['world:' + wfp];
+  check(top.n === 1 && top.top[0].name === 'Netero', 'top: a hidden person is left out');
+  r = await call('GET', '/api/netero', {}, wb, ub);
+  check((r.body as any).netero.records.length === 1, 'top: hiding keeps your records');
+  r = await call('PATCH', '/api/me', { hideRank: 'x' }, undefined, ub);
+  check(r.status === 400, 'me: hideRank must be true or false');
+  await call('PATCH', '/api/me', { hideRank: false }, undefined, ub);
   // deleting the account deletes its Netero data
   r = await call('DELETE', '/api/me', {}, undefined, ut);
-  check(r.status === 200 && (await kv.get(`tr:nt:${wid}:netero`)) === null && (await kv.get('tr:ns:netero')) === null, 'netero: removed with the account');
+  check(r.status === 200 && (await kv.get(`tr:nt:${wid}:netero`)) === null, 'netero: removed with the account');
+  r = await call('GET', '/api/netero', {}, wb, ub);
+  top = (r.body as any).netero.tops['world:' + wfp];
+  check(top.n === 1 && top.top[0].name === 'Bea', 'top: a deleted account leaves the Top 3');
   // deleting the repertoire too
   const ut2 = ((await call('POST', '/api/auth/lichess', { code: 'Otra', verifier: 'v'.repeat(64), redirectUri: 'https://traynsko.vercel.app/' })).body as any).token;
   const wt2 = ((await call('POST', '/api/enter', { password: 'benko-2026' }, undefined, ut2)).body as any).entries[0].token;
   await call('POST', '/api/netero', { session: session(p1, 1000) }, wt2, ut2);
   check(!!(await kv.get(`tr:nt:${wid}:otra`)), 'netero: saved for another account');
   await call('DELETE', `/api/admin/worlds/${wid}`, {}, admin);
-  check((await kv.get(`tr:nt:${wid}:otra`)) === null, 'netero: removed with the repertoire');
+  check((await kv.get(`tr:nt:${wid}:otra`)) === null && Object.keys(await kv.hgetall(`tr:ntop:${wid}`)).length === 0, 'netero: removed with the repertoire (and its Top 3)');
 
   console.log(`netero: ${ok} ok, ${bad} failed`);
   process.exit(bad ? 1 : 0);

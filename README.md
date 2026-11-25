@@ -20,12 +20,23 @@ Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el 
 Entrenamiento solo de la apertura, en su propia pestaña. Principio: **el reintento es entrenamiento; la primera pasada es examen.**
 
 - **Mecánica**: cada línea se juega desde la jugada 1 y el rival responde al instante. Una jugada incorrecta suma un *fail* y se retira; tras tres intentos se puede ver la jugada. Si la línea tuvo algún fail, se repite desde el principio hasta hacerla limpia; solo entonces llega la siguiente.
-- **Modalidades**: *Netero completo* (todas las líneas activas del repertorio o de un capítulo, en orden aleatorio), *Netero diario* (3, 5 o 10 líneas; primero las fallidas hace poco) y *Repetir solo errores* (desde el resultado).
+- **Modalidades**: *Netero completo* (todas las líneas activas del repertorio o de un capítulo, en orden aleatorio) y *Repetir solo errores* (desde el resultado). Las 3 líneas de la Campaña usan la misma mecánica.
 - **Nota** = 100 × Precisión × Ritmo. Precisión: jugadas acertadas al primer intento / jugadas. Ritmo: min(1, t₁₀₀ / tiempo medio), con t₁₀₀ = 2,0 s (`NETERO.t100Ms` en `shared/netero.ts`, provisional). Cada jugada (posición + jugada esperada) cuenta una sola vez, la primera vez que aparece, así que el tronco común no infla la nota. El tiempo corre desde que la posición queda lista hasta la jugada correcta, sin animaciones, sin el destello del error y sin pausas. Las repeticiones no puntúan.
-- **Récords** (con cuenta de Lichess): personales, uno por repertorio completo y por capítulo, en el Atlas y en la portada de Netero. Solo cuentan si todas las líneas del alcance están activas (si no, la sesión es práctica). El récord va ligado a una huella del contenido, que el servidor comprueba: si el capítulo cambia, el anterior queda como «versión anterior».
-- **Racha**: un Netero diario completado al día; el segundo del mismo día es práctica.
+- **Récords** (con cuenta de Lichess): personales, uno por repertorio completo y por capítulo, en el Atlas y en la pantalla de Netero. Solo cuentan si todas las líneas del alcance están activas (si no, la sesión es práctica). El récord va ligado a una huella del contenido, que el servidor comprueba: si el capítulo cambia, el anterior queda como «versión anterior».
+- **Top 3**: en un repertorio compartido (desde dos cuentas con nota en el alcance), las tres mejores notas, una por persona, con su nombre de Lichess y el dispositivo. En Ajustes, «Aparecer en los rankings de Netero» permite quedar fuera sin perder los récords.
 - **Pausa**: manual o automática al cambiar de pestaña, de aplicación o de ventana; el tablero se oculta y el cronómetro se detiene. La sesión se guarda en el dispositivo tras cada jugada y se puede continuar después de cerrar la app.
 - Una primera pasada limpia otorga el emblema de la línea si aún no lo tenía.
+
+## La Campaña
+
+El flujo diario, en la pestaña Netero (con cuenta de Lichess). Es personal: no tiene puntos ni ranking; se mide con la **racha** y el **nivel del rival**.
+
+- **Una al día por repertorio**: primero un Netero de 3 líneas (primero las de la cola de errores), luego una **partida completa 10+5** contra Trayner desde donde termina una de esas líneas, elegida al azar. El rival lleva el nombre de un GM.
+- **Nivel del rival**: empieza en 2000 (o el que se elija la primera vez, de 1800 a 2400) y sube 50 con victoria, se mantiene con tablas y baja 50 con derrota, entre 1800 y 2800. Es por repertorio.
+- **Racha** (por cuenta): suma un día por Campaña completada. Abandonar antes de la jugada 20 cuenta como derrota y ese día no suma. Cada 7 días seguidos se gana una **tregua** (máximo 2), que cubre sola un día sin Campaña. A los 7 días se desbloquea el tablero «Campaña» en Ajustes.
+- **Colección de rivales**: cada GM al que ganas o haces tablas queda en el Atlas.
+- La Campaña empezada antes de medianoche cuenta para su día. Todo se guarda en el dispositivo tras cada paso (la partida también) y se puede continuar después de cerrar la app.
+- En Entrenar, mientras la Campaña de hoy esté pendiente, aparece un aviso que lleva a ella. Las partidas de Campaña quedan en el registro marcadas «Campaña».
 
 ## Acceso por persona (Sala del maestro → Usuarios)
 
@@ -88,11 +99,12 @@ DEV_FAKE_LICHESS=1 npm run dev
 python3 tests/e2e_accounts.py /tmp/qa
 ```
 
-Modo Netero, con Lichess simulado (sesión con un fail y su repetición, pausa, continuar tras recargar, récord, repetir errores, diario y racha, Atlas, móviles):
+Modo Netero y Campaña, con Lichess simulado:
 
 ```bash
 DEV_FAKE_LICHESS=1 npm run dev
-python3 tests/qa_netero.py /tmp/qa
+python3 tests/qa_netero.py /tmp/qa     # sesión con un fail y su repetición, pausa, continuar tras recargar, récord, repetir errores, Atlas, móviles
+python3 tests/qa_campaign.py /tmp/qa   # Campaña: memoria, partida desde el final de la línea, continuar tras recargar, resultado, Atlas, Top 3 con dos cuentas, móviles
 ```
 
 Tablas en un final de torres (con `npm run dev` y datos limpios):

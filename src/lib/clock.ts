@@ -34,6 +34,14 @@ export class ChessClock {
     return spent;
   }
 
+  /** Carry on a saved game: both times as they were, the side to move running from now. */
+  restore(remaining: Record<Side, number>, toMove: Side) {
+    this.remaining = { w: Math.max(0, remaining.w), b: Math.max(0, remaining.b) };
+    this.started = true;
+    this.running = toMove;
+    this.since = this.now();
+  }
+
   stop() {
     if (this.running) {
       this.remaining[this.running] = this.left(this.running);

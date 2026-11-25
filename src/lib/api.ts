@@ -2,9 +2,10 @@ import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, Member, PublicW
 import type { Medal, UserInfo } from '../../shared/atlas';
 import type { Picks } from '../../shared/picks';
 import type { NeteroRecord, NeteroState, NeteroSummary } from '../../shared/netero';
+import type { CampaignFinish, CampaignOutcome, CampaignView } from '../../shared/campaign';
 
 /** What the server says about a finished Netero session. */
-export interface NeteroResult { nota: number; recordable: boolean; isRecord: boolean; prev: NeteroRecord | null; record: NeteroRecord | null; counted: boolean }
+export interface NeteroResult { nota: number; recordable: boolean; isRecord: boolean; prev: NeteroRecord | null; record: NeteroRecord | null }
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
@@ -64,7 +65,9 @@ export const api = {
   deleteMyGame: (t: string, id: string, player: string) => call('DELETE', 'games/' + id + q({ player }), undefined, t),
 
   lichessLogin: (code: string, verifier: string, redirectUri: string) => call<{ token: string; user: UserInfo }>('POST', 'auth/lichess', { code, verifier, redirectUri }),
-  me: () => call<{ user: UserInfo; medals: number }>('GET', 'me'),
+  me: () => call<{ user: UserInfo; medals: number; hideRank: boolean }>('GET', 'me'),
+  /** Leave the account out of every Top 3 (or back in). */
+  setHideRank: (hideRank: boolean) => call<{ hideRank: boolean }>('PATCH', 'me', { hideRank }),
   deleteAccount: () => call<{ ok: true; games: number }>('DELETE', 'me'),
   logoutAll: () => call('POST', 'me/logout-all'),
   claimPreview: (t: string, name: string) => call<{ games: number; claimed: 'you' | 'other' | null }>('GET', 'me/claim' + q({ name }), undefined, t),
@@ -78,6 +81,9 @@ export const api = {
   /** Modo Netero in the open repertoire: records, best times, lines to review and the daily streak (account only). */
   netero: (t: string) => call<{ netero: NeteroState }>('GET', 'netero', undefined, t).then((r) => r.netero),
   saveNetero: (t: string, session: NeteroSummary) => call<{ netero: NeteroState; result: NeteroResult }>('POST', 'netero', { session }, t),
+  /** The Campaign in the open repertoire, the streak and the collection of rivals (account only). */
+  campaign: (t: string) => call<CampaignView>('GET', 'campaign', undefined, t),
+  finishCampaign: (t: string, finish: CampaignFinish) => call<CampaignView & { outcome: CampaignOutcome }>('POST', 'campaign', { finish }, t),
 
   admin: {
     login: (password: string) => call<{ token: string }>('POST', 'admin/login', { password }).then((r) => r.token),

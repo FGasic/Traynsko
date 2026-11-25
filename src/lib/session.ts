@@ -22,7 +22,12 @@ export interface SessionConfig {
   botMoveMs: number;
   /** Full move number where the user starts playing (1 = from the first move). */
   startMove: number;
+  /** The whole line is already on the board: the game starts where it ends (the Campaign). */
+  preplayLine?: boolean;
 }
+
+/** A game in progress, as kept on the device: the moves after the line and both clocks. */
+export interface GameSnap { moves: { uci: string; by: MoveBy; clock: number }[]; remaining: Record<Side, number> }
 
 export interface SessionEvents {
   change(): void;
@@ -101,7 +106,7 @@ export class Session {
     this.lineMoves = cfg.line.uci.split(' ').filter(Boolean);
     this.clock = new ChessClock(cfg.baseMs, cfg.incMs);
     this.fens = [this.chess.fen()];
-    const skip = plySkip(this.lineMoves, this.startFen, cfg.userColor, cfg.startMove);
+    const skip = cfg.preplayLine ? this.lineMoves.length : plySkip(this.lineMoves, this.startFen, cfg.userColor, cfg.startMove);
     for (let i = 0; i < skip; i++) {
       const m = this.chess.move(this.uciObj(this.lineMoves[i]));
       this.played.push({ san: m.san, uci: this.lineMoves[i], by: 'pre', clock: cfg.baseMs });
@@ -109,6 +114,26 @@ export class Session {
     }
     this.lineIdx = skip;
     this.preplied = skip;
+  }
+
+  /** The moves played after the pre-played part, and both clocks: enough to carry on after closing the app. */
+  snapshot(): GameSnap {
+    return {
+      moves: this.played.slice(this.preplied).map((m) => ({ uci: m.uci, by: m.by, clock: Math.round(m.clock) })),
+      remaining: { w: Math.round(this.clock.left('w')), b: Math.round(this.clock.left('b')) },
+    };
+  }
+
+  /** Before `start`: replay a saved game (no sounds, no bot) and set both clocks as they were. */
+  restore(snap: GameSnap) {
+    if (this.started) return;
+    for (const m of snap.moves) {
+      const mv = this.chess.move(this.uciObj(m.uci));
+      this.played.push({ san: mv.san, uci: m.uci, by: m.by, clock: m.clock });
+      this.fens.push(this.chess.fen());
+      if (this.lineIdx < this.lineMoves.length) this.lineIdx++;
+    }
+    if (snap.moves.length) this.clock.restore(snap.remaining, this.chess.turn());
   }
 
   /** Kick off: play the opponent's line move if it's their turn, or go straight to the game. */
