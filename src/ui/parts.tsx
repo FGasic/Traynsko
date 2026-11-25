@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import type { Bot } from '../lib/bots';
 
-export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external' | 'library' | 'clock' | 'play' | 'lock' | 'back' | 'search' | 'plus';
+export type IconName = 'train' | 'book' | 'bot' | 'archive' | 'sliders' | 'upload' | 'drive' | 'download' | 'copy' | 'trash' | 'next' | 'flag' | 'skip' | 'eye' | 'check' | 'x' | 'refresh' | 'chevron' | 'edit' | 'medal' | 'login' | 'logout' | 'external' | 'library' | 'clock' | 'play' | 'lock' | 'back' | 'search' | 'plus' | 'netero' | 'pause';
 
 const PATHS: Record<IconName, string> = {
   train: 'M4 4h16v16H4z M4 12h16 M12 4v16 M4 4l8 8 M12 12l8 8',
@@ -34,6 +34,9 @@ const PATHS: Record<IconName, string> = {
   back: 'M15 6l-6 6 6 6',
   search: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13z M15.3 15.3 20 20',
   plus: 'M12 5v14 M5 12h14',
+  // a target: the same mark, hit again and again
+  netero: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z M12 11.2a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z',
+  pause: 'M8.5 5.5v13 M15.5 5.5v13',
 };
 
 /** Cog outline (eight teeth) with a hole, drawn once. */

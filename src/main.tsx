@@ -3,7 +3,7 @@ import { App } from './ui/App';
 
 declare module 'preact' {
   namespace JSX {
-    interface IntrinsicElements { piece: { class?: string } }
+    interface IntrinsicElements { piece: { class?: string; style?: Record<string, string> } }
   }
 }
 

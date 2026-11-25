@@ -6,9 +6,11 @@ import { MyGamesScreen, LibraryScreen } from './WorldScreens';
 import { Portal, MasterGate } from './Portal';
 import { AdminRoom } from './AdminRoom';
 import { AtlasScreen } from './Atlas';
+import { NeteroScreen } from './NeteroScreen';
+import type { NeteroState, NeteroSummary } from '../../shared/netero';
 import { Emblem } from './Emblem';
 import { Icon, type IconName } from './parts';
-import { api, ApiError, setPlayerName, setUserToken, type NewGame } from '../lib/api';
+import { api, ApiError, setPlayerName, setUserToken, type NeteroResult, type NewGame } from '../lib/api';
 import { prefs, type KnownWorld, type Settings, type UserSession, type WorldSession } from '../lib/prefs';
 import { startLichessLogin, takeLichessReturn } from '../lib/lichess';
 import type { Medal } from '../../shared/atlas';
@@ -19,9 +21,10 @@ import { setSoundEnabled, primeSound } from '../lib/sound';
 import { playerKey, type Line, type PublicWorld, type RepMeta, type Repertoire } from '../../shared/types';
 import { cleanPicks, emptyPicks, fromDisabledChapters, trainingOrder, type Picks } from '../lib/picks';
 
-type Tab = 'train' | 'games' | 'library' | 'atlas' | 'bots' | 'settings';
+type Tab = 'train' | 'netero' | 'games' | 'library' | 'atlas' | 'bots' | 'settings';
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: 'train', label: 'Entrenar', icon: 'train' },
+  { id: 'netero', label: 'Netero', icon: 'netero' },
   { id: 'games', label: 'Partidas', icon: 'archive' },
   { id: 'library', label: 'Biblioteca', icon: 'library' },
   { id: 'atlas', label: 'Atlas', icon: 'medal' },
@@ -49,6 +52,9 @@ export function App() {
   const [signingIn, setSigningIn] = useState(lichessReturn?.kind === 'code');
   const [medals, setMedals] = useState<Medal[] | null>(null);
   const [medalErr, setMedalErr] = useState<string | null>(null);
+  /** Modo Netero in the open repertoire (account only), tagged with its repertoire so a stale one is never shown */
+  const [netero, setNetero] = useState<{ world: string; state: NeteroState } | null>(null);
+  const [neteroErr, setNeteroErr] = useState<string | null>(null);
   const [adminToken, setAdminToken] = useState<string | null>(prefs.adminToken);
   const [view, setView] = useState<View>(() => (prefs.session() ? 'world' : 'portal'));
   const [reps, setReps] = useState<Repertoire[]>([]);
@@ -140,6 +146,29 @@ export function App() {
       const r = await api.awardMedal(session.token, { repId: rep.id, lineId: line.id, startPly: 0, errors: 0, hints: 0 });
       setMedals((prev) => [...(prev ?? []).filter((m) => m.fp !== r.medal.fp), r.medal]);
       return { isNew: r.isNew, count: r.medal.count };
+    } catch (e) {
+      handleAuth(e);
+      throw e;
+    }
+  }
+
+  /* ---------- Modo Netero ---------- */
+  const loadNetero = () => {
+    if (!user || !session || !loaded) { setNetero(null); return; }
+    const wid = session.world.id;
+    setNeteroErr(null);
+    api.netero(session.token).then((state) => setNetero({ world: wid, state })).catch((e) => { if (!handleAuth(e)) setNeteroErr(e.message); });
+  };
+  useEffect(loadNetero, [user?.token, session?.token, loaded]);
+  const neteroState = session && netero?.world === session.world.id ? netero.state : null;
+
+  async function saveNetero(s: NeteroSummary): Promise<NeteroResult> {
+    if (!session) throw new Error('Entra a un repertorio.');
+    const wid = session.world.id;
+    try {
+      const r = await api.saveNetero(session.token, s);
+      setNetero({ world: wid, state: r.netero });
+      return r.result;
     } catch (e) {
       handleAuth(e);
       throw e;
@@ -422,6 +451,31 @@ export function App() {
                 onBusy={setBusy}
               />
             </div>
+            {/* Netero stays mounted like the board above: a session keeps its place while other tabs are open (it pauses) */}
+            <div class={`screen train-layer netero-layer ${tab === 'netero' ? '' : 'is-hidden'}`} aria-hidden={tab !== 'netero'}>
+              <NeteroScreen
+                key={session.world.id}
+                active={tab === 'netero' && view === 'world'}
+                worldId={session.world.id}
+                worldName={session.world.name}
+                settings={settings}
+                reps={reps0}
+                off={offKeys}
+                linesLoaded={loaded && !!picks}
+                playerName={playerName}
+                account={!!user}
+                signingIn={signingIn}
+                netero={neteroState}
+                neteroError={neteroErr}
+                onRetryLoad={loadNetero}
+                medalFps={medalFps}
+                onAwardMedal={awardMedal}
+                onSave={saveNetero}
+                onUpdateSettings={updateSettings}
+                onLogin={() => login()}
+                goTo={(t) => setTab(t as Tab)}
+              />
+            </div>
             {tab === 'library' && (
               <div class="screen page">
                 <LibraryScreen
@@ -437,7 +491,7 @@ export function App() {
             )}
             {tab === 'atlas' && (
               <div class="screen page">
-                <AtlasScreen reps={reps0} user={user} medals={medals} error={medalErr} signingIn={signingIn} onLogin={() => login()} onRetry={loadMedals} />
+                <AtlasScreen reps={reps0} user={user} medals={medals} error={medalErr} signingIn={signingIn} onLogin={() => login()} onRetry={loadMedals} worldId={session.world.id} worldName={session.world.name} netero={neteroState} onOpenNetero={() => setTab('netero')} />
               </div>
             )}
             {tab === 'bots' && <div class="screen page"><BotsScreen settings={settings} onUpdate={updateSettings} maiaState={() => maiaRef.current?.state ?? 'idle'} /></div>}

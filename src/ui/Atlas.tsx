@@ -1,8 +1,33 @@
 import { useMemo } from 'preact/hooks';
 import { PIECE_SVG } from '../generated/pieces';
 import { lineFingerprint, type Medal, type UserInfo } from '../../shared/atlas';
+import { liveStreak, localDay, notaText, recordFor, scopeFingerprint, scopeLines, type NeteroRecord, type NeteroScope, type NeteroState } from '../../shared/netero';
 import type { Line, Repertoire } from '../../shared/types';
+import { fmtDuration, fmtSec } from '../lib/netero';
 import { Icon, PieceDot } from './parts';
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+/** One Netero record, in a line: precision, pace, time, fails, date and device. */
+export function RecordFacts({ rec }: { rec: NeteroRecord }) {
+  return (
+    <span class="nt-rec-facts">
+      {pct(rec.precision)} · {fmtSec(rec.thinkMs / Math.max(1, rec.nodes))}/jug · {fmtDuration(rec.totalMs)} · {rec.fails} {rec.fails === 1 ? 'fail' : 'fails'} · {fmtDate(rec.date)} · {rec.device === 'movil' ? 'móvil' : 'PC'}
+    </span>
+  );
+}
+
+/** The Netero record of a scope as it is now (or the latest of a previous version). */
+function NeteroRecordRow({ label, scope, fp, records }: { label: string; scope: NeteroScope; fp: string | null; records: NeteroRecord[] }) {
+  const { current, previous } = fp ? recordFor(records, scope, fp) : { current: null, previous: null };
+  return (
+    <div class={`nt-atlas-row ${current ? '' : 'is-empty'}`}>
+      <span class="nt-atlas-label">{label}</span>
+      {current ? <><span class="nt-rec-nota">{notaText(current.nota)}</span><RecordFacts rec={current} /></> : <span class="nt-rec-none">Sin récord</span>}
+      {!current && previous && <span class="nt-rec-prev">Versión anterior: {notaText(previous.nota)} ({fmtDate(previous.date)})</span>}
+    </div>
+  );
+}
 
 let seq = 0;
 export type BadgeState = 'earned' | 'stale' | 'hidden';
@@ -54,13 +79,27 @@ interface Props {
   signingIn: boolean;
   onLogin(): void;
   onRetry(): void;
+  worldId: string;
+  worldName: string;
+  /** Modo Netero: records and streak (null while loading) */
+  netero: NeteroState | null;
+  onOpenNetero(): void;
 }
 
 type Entry = { line: Line; index: number; state: BadgeState; medal?: Medal };
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' });
 
-export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onRetry }: Props) {
+export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onRetry, worldId, worldName, netero, onOpenNetero }: Props) {
+  // Netero records belong to the content as it is now: the fingerprint of the repertoire and of each chapter
+  const neteroFps = useMemo(() => {
+    const fp = (scope: { kind: 'world' | 'rep'; id: string }) => {
+      const lines = scopeLines(reps, scope).map((x) => ({ color: x.rep.color, line: x.line }));
+      return lines.length ? scopeFingerprint(lines) : null;
+    };
+    return { world: fp({ kind: 'world', id: worldId }), reps: new Map(reps.map((r) => [r.id, fp({ kind: 'rep', id: r.id })])) };
+  }, [reps, worldId]);
+  const streak = liveStreak(netero?.streak ?? null, localDay());
   const chapters = useMemo(() => {
     if (!medals) return [];
     const byFp = new Map(medals.map((m) => [m.fp, m]));
@@ -110,6 +149,24 @@ export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onR
             <div><b>{total ? Math.floor((earned / total) * 100) : 0}%</b><span>del Atlas</span></div>
             <div><b>{stale}</b><span>por revalidar</span></div>
           </div>
+          {reps.length > 0 && (
+            <section class="panel nt-atlas" aria-label="Récords Netero">
+              <div class="panel-head">
+                <h2 class="section-title">Récords Netero</h2>
+                <span class="nt-streak" title="Días seguidos con al menos un Netero diario">Racha <b>{streak.cur}</b> {streak.cur === 1 ? 'día' : 'días'} · mejor {streak.best}</span>
+              </div>
+              {!netero && <div class="loading"><div class="spinner small" />Cargando récords…</div>}
+              {netero && (
+                <>
+                  <NeteroRecordRow label="Repertorio completo" scope={{ kind: 'world', id: worldId, name: worldName }} fp={neteroFps.world} records={netero.records} />
+                  {reps.length > 1 && reps.map((rep) => (
+                    <NeteroRecordRow label={rep.name} scope={{ kind: 'rep', id: rep.id, name: rep.name }} fp={neteroFps.reps.get(rep.id) ?? null} records={netero.records} />
+                  ))}
+                </>
+              )}
+              <div class="row-actions"><button type="button" class="btn ghost small" onClick={onOpenNetero}><Icon name="netero" size={16} />Ir a Modo Netero</button></div>
+            </section>
+          )}
           {reps.length === 0 && <div class="empty"><h2>Aún no hay capítulos</h2><p>Cuando haya líneas en este repertorio, aparecerán aquí como emblemas por conquistar.</p></div>}
           {chapters.map(({ rep, entries, earned: got }) => (
             <section class="atlas-chapter">
