@@ -50,7 +50,8 @@ export function GameList({ games, onOpen, showPlayer = false, empty }: { games: 
                       <span class="game-meta">
                         {showPlayer && <b>{g.playerName} · </b>}
                         <PieceDot color={g.userColor} /> vs {g.botName} · {g.termination || g.result} · {Math.ceil(g.plies / 2)} jug.
-                        {g.lineErrors > 0 ? <span class="err"> · {g.lineErrors} {g.lineErrors === 1 ? 'error' : 'errores'}</span> : <span class="clean"> · línea perfecta</span>}
+                        {g.mode === 'campaign' ? <span class="camp-tag"> · Campaña</span>
+                          : g.lineErrors > 0 ? <span class="err"> · {g.lineErrors} {g.lineErrors === 1 ? 'error' : 'errores'}</span> : <span class="clean"> · línea perfecta</span>}
                       </span>
                     </span>
                     <span class="game-time">{new Date(g.date).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>

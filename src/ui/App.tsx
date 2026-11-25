@@ -7,7 +7,8 @@ import { Portal, MasterGate } from './Portal';
 import { AdminRoom } from './AdminRoom';
 import { AtlasScreen } from './Atlas';
 import { NeteroScreen } from './NeteroScreen';
-import type { NeteroState, NeteroSummary } from '../../shared/netero';
+import { localDay, type NeteroState, type NeteroSummary } from '../../shared/netero';
+import type { CampaignFinish, CampaignOutcome, CampaignView } from '../../shared/campaign';
 import { Emblem } from './Emblem';
 import { Icon, type IconName } from './parts';
 import { api, ApiError, setPlayerName, setUserToken, type NeteroResult, type NewGame } from '../lib/api';
@@ -55,6 +56,9 @@ export function App() {
   /** Modo Netero in the open repertoire (account only), tagged with its repertoire so a stale one is never shown */
   const [netero, setNetero] = useState<{ world: string; state: NeteroState } | null>(null);
   const [neteroErr, setNeteroErr] = useState<string | null>(null);
+  /** the Campaign in the open repertoire, the streak and the rivals (account only) */
+  const [campaign, setCampaign] = useState<{ world: string; view: CampaignView } | null>(null);
+  const [campaignErr, setCampaignErr] = useState<string | null>(null);
   const [adminToken, setAdminToken] = useState<string | null>(prefs.adminToken);
   const [view, setView] = useState<View>(() => (prefs.session() ? 'world' : 'portal'));
   const [reps, setReps] = useState<Repertoire[]>([]);
@@ -160,6 +164,28 @@ export function App() {
     api.netero(session.token).then((state) => setNetero({ world: wid, state })).catch((e) => { if (!handleAuth(e)) setNeteroErr(e.message); });
   };
   useEffect(loadNetero, [user?.token, session?.token, loaded]);
+  const loadCampaign = () => {
+    if (!user || !session || !loaded) { setCampaign(null); return; }
+    const wid = session.world.id;
+    setCampaignErr(null);
+    api.campaign(session.token).then((view) => setCampaign({ world: wid, view })).catch((e) => { if (!handleAuth(e)) setCampaignErr(e.message); });
+  };
+  useEffect(loadCampaign, [user?.token, session?.token, loaded]);
+  const campaignView = session && campaign?.world === session.world.id ? campaign.view : null;
+
+  async function finishCampaign(f: CampaignFinish): Promise<CampaignOutcome> {
+    if (!session) throw new Error('Entra a un repertorio.');
+    const wid = session.world.id;
+    try {
+      const r = await api.finishCampaign(session.token, f);
+      const { outcome, ...view } = r;
+      setCampaign({ world: wid, view });
+      return outcome;
+    } catch (e) {
+      handleAuth(e);
+      throw e;
+    }
+  }
   const neteroState = session && netero?.world === session.world.id ? netero.state : null;
 
   async function saveNetero(s: NeteroSummary): Promise<NeteroResult> {
@@ -449,6 +475,7 @@ export function App() {
                 onOpenMaster={openMaster}
                 goTo={(t) => setTab(t as Tab)}
                 onBusy={setBusy}
+                campaignPending={!!campaignView && campaignView.campaign?.lastDay !== localDay()}
               />
             </div>
             {/* Netero stays mounted like the board above: a session keeps its place while other tabs are open (it pauses) */}
@@ -464,6 +491,7 @@ export function App() {
                 linesLoaded={loaded && !!picks}
                 playerName={playerName}
                 account={!!user}
+                userId={user?.id ?? null}
                 signingIn={signingIn}
                 netero={neteroState}
                 neteroError={neteroErr}
@@ -474,6 +502,12 @@ export function App() {
                 onUpdateSettings={updateSettings}
                 onLogin={() => login()}
                 goTo={(t) => setTab(t as Tab)}
+                campaign={campaignView}
+                campaignError={campaignErr}
+                onRetryCampaign={loadCampaign}
+                onFinishCampaign={finishCampaign}
+                onSaveGame={saveGame}
+                maia={maia}
               />
             </div>
             {tab === 'library' && (
@@ -491,7 +525,7 @@ export function App() {
             )}
             {tab === 'atlas' && (
               <div class="screen page">
-                <AtlasScreen reps={reps0} user={user} medals={medals} error={medalErr} signingIn={signingIn} onLogin={() => login()} onRetry={loadMedals} worldId={session.world.id} worldName={session.world.name} netero={neteroState} onOpenNetero={() => setTab('netero')} />
+                <AtlasScreen reps={reps0} user={user} medals={medals} error={medalErr} signingIn={signingIn} onLogin={() => login()} onRetry={loadMedals} worldId={session.world.id} worldName={session.world.name} netero={neteroState} campaign={campaignView} onOpenNetero={() => setTab('netero')} />
               </div>
             )}
             {tab === 'bots' && <div class="screen page"><BotsScreen settings={settings} onUpdate={updateSettings} maiaState={() => maiaRef.current?.state ?? 'idle'} /></div>}
@@ -503,6 +537,7 @@ export function App() {
             {tab === 'settings' && (
               <div class="screen page">
                 <SettingsScreen
+                  rewards={campaignView?.streak.rewards ?? []}
                   settings={settings}
                   onUpdate={updateSettings}
                   world={session.world}

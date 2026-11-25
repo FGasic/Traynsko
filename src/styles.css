@@ -361,6 +361,7 @@ button.world-badge:hover { border-color: var(--gold); box-shadow: 0 0 12px rgba(
 .theme-imperio { --sq-light: #e6dcc3; --sq-dark: #5b7ea3; }
 .theme-torneo { --sq-light: #eceed6; --sq-dark: #74935f; }
 .theme-pizarra { --sq-light: #dfe5ea; --sq-dark: #8199aa; }
+.theme-campana { --sq-light: #ecd9a9; --sq-dark: #8c3b2f; }   /* earned with 7 days of Campaign */
 .board-shell cg-board {
   background-color: var(--sq-light);
   background-image: conic-gradient(var(--sq-dark) 0 90deg, var(--sq-light) 90deg 180deg, var(--sq-dark) 180deg 270deg, var(--sq-light) 270deg);
@@ -1291,4 +1292,56 @@ html.lm-dragging, html.lm-dragging * { cursor: grabbing !important; -webkit-user
   /* the result: the main action takes the first row, the way back the second */
   .nt-report .sheet-foot .btn.primary { order: -1; flex-basis: 100%; margin-left: 0; }
   .nt-report .sheet-foot .btn.ghost { flex: 1; }
+}
+
+/* ---------- the Campaign ---------- */
+.camp-card { border-color: var(--gold-mid); box-shadow: inset 0 0 0 1px rgba(220, 183, 94, 0.12), 0 10px 28px rgba(0, 0, 0, 0.3); }
+.camp-card.done { border-color: var(--hair); }
+.camp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.camp-stats div { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 10px 6px; border: 1px solid var(--hair-soft); border-radius: 4px; background: rgba(4, 10, 22, 0.5); }
+.camp-stats b { font-family: var(--font-display); font-weight: 800; font-size: 26px; line-height: 1.1; color: var(--gold-hi); font-variant-numeric: lining-nums tabular-nums; }
+.camp-stats b small { font-size: .55em; color: var(--text-mute); }
+.camp-stats span { font-size: 12.5px; color: var(--text-mute); text-align: center; }
+.camp-today { margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--good); font-size: 14.5px; }
+.camp-start .field-label { margin-bottom: 6px; }
+.camp-start .help { margin-top: 6px; }
+.camp-actions { justify-content: space-between; }
+.camp-next { font-size: 13.5px; color: var(--text-mute); }
+.ready-pick.camp-pick { border-color: var(--gold-mid); color: var(--gold-hi); }
+.camp-result .result-sub b { color: var(--gold-hi); }
+.camp-notes { list-style: none; margin: 4px 18px 6px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.camp-notes li { display: flex; align-items: center; gap: 8px; font-size: 14.5px; color: var(--text-dim); padding: 8px 10px; border-radius: 4px; border: 1px solid var(--hair-soft); background: rgba(4, 10, 22, 0.45); }
+.camp-notes li.good { color: var(--good); border-color: rgba(143, 196, 108, 0.35); }
+.camp-notes li.bad { color: var(--bad); border-color: rgba(226, 105, 76, 0.35); }
+.camp-next-game b { color: var(--gold-hi); }
+.camp-history { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.camp-dot { width: 24px; height: 24px; border-radius: 3px; display: inline-grid; place-items: center; font-family: var(--font-display); font-weight: 800; font-size: 13px; }
+.camp-dot.win { background: var(--good-soft); color: var(--good); box-shadow: inset 0 0 0 1px rgba(143, 196, 108, 0.4); }
+.camp-dot.draw { background: rgba(255, 255, 255, 0.06); color: var(--draw); box-shadow: inset 0 0 0 1px rgba(169, 181, 196, 0.35); }
+.camp-dot.loss { background: var(--bad-soft); color: var(--bad); box-shadow: inset 0 0 0 1px rgba(226, 105, 76, 0.4); }
+.camp-start-note { margin-left: 6px; font-size: 12.5px; color: var(--text-mute); }
+.camp-rivals { display: flex; flex-direction: column; gap: 6px; }
+.camp-rivals ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.camp-rivals li { display: flex; flex-direction: column; padding: 6px 10px; border-radius: 3px; border: 1px solid var(--hair-soft); background: rgba(4, 10, 22, 0.45); min-width: 0; }
+.camp-rivals li.win { border-color: var(--hair); }
+.camp-rivals li b { font-family: var(--font-display); font-size: 13.5px; letter-spacing: .03em; color: var(--gold-hi); }
+.camp-rivals li small { font-size: 12px; color: var(--text-mute); }
+.camp-tag { color: var(--gold); font-weight: 700; }
+.swatch.locked { opacity: .5; cursor: not-allowed; }
+.swatch.locked .icon { vertical-align: -1px; }
+
+/* Netero completo: the Top 3 of a shared repertoire */
+.nt-top { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 6px; grid-column: 1 / -1; flex-basis: 100%; }
+.nt-top li { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 9px; border-radius: 3px; border: 1px solid var(--hair-soft); background: rgba(4, 10, 22, 0.5); font-size: 13.5px; color: var(--text-dim); }
+.nt-top li:first-child { border-color: var(--gold-mid); }
+.nt-top li.me { box-shadow: inset 0 0 0 1px var(--gold); }
+.nt-top-pos { font-family: var(--font-display); font-weight: 800; color: var(--gold); }
+.nt-top-name { font-weight: 700; color: var(--text); max-width: 14ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-top b { font-family: var(--font-display); color: var(--gold-hi); }
+.nt-top small { font-size: 11.5px; color: var(--text-mute); }
+@media (max-width: 560px) {
+  .camp-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .camp-stats b { font-size: 22px; }
+  .camp-actions { flex-direction: column; align-items: stretch; }
+  .camp-actions .btn { width: 100%; }
 }

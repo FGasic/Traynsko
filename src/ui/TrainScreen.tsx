@@ -58,6 +58,8 @@ interface Props {
   goTo(tab: string): void;
   /** A game is running, or finished and not yet saved or discarded: leaving would lose it. */
   onBusy(busy: boolean): void;
+  /** today's Campaign is still to be played (a discreet reminder before starting) */
+  campaignPending?: boolean;
 }
 
 interface Meta {
@@ -475,6 +477,11 @@ export function TrainScreen(p: Props) {
                     {pool.length === 1 ? '1 línea elegida' : `${pool.length} de ${totalLines} líneas`}
                   </button>
                 )}
+                {p.campaignPending && (
+                  <button type="button" class="ready-pick camp-pick" onClick={() => p.goTo('netero')} title="La Campaña de hoy está en la pestaña Netero">
+                    Campaña de hoy pendiente
+                  </button>
+                )}
               </div>
               <button type="button" class="gear-btn" aria-label="Opciones de la partida" title="Opciones de la partida" aria-haspopup="dialog" aria-expanded={optsOpen} onClick={() => setOptsOpen(true)}>
                 <GearIcon size={20} />
@@ -661,7 +668,7 @@ function FitText({ text, cls }: { text: string; cls: string }) {
   return <span ref={ref} class={cls}>{text}</span>;
 }
 
-function PlayerStrip({ name, elo, side, session, thinking, top }: { name: string; elo?: number; side: 'w' | 'b'; session: Session | null; thinking: boolean; top?: boolean }) {
+export function PlayerStrip({ name, elo, side, session, thinking, top }: { name: string; elo?: number; side: 'w' | 'b'; session: Session | null; thinking: boolean; top?: boolean }) {
   return (
     <div class={`player ${top ? 'top' : 'bottom'}`}>
       <div class="player-id">
@@ -747,8 +754,8 @@ function ClockFace({ side, session }: { side: 'w' | 'b'; session: Session | null
   return <div class={`clock ${active ? 'active' : ''} ${low && active ? 'low' : ''}`} aria-label="Reloj">{fmtClock(ms)}</div>;
 }
 
-interface Row { no: number; w?: PlayedMove | null; b?: PlayedMove; wc: string; bc: string }
-function buildRows(played: PlayedMove[], startFen: string | undefined, linePlies: number): Row[] {
+export interface Row { no: number; w?: PlayedMove | null; b?: PlayedMove; wc: string; bc: string }
+export function buildRows(played: PlayedMove[], startFen: string | undefined, linePlies: number): Row[] {
   const fen = startFen ?? 'x x x x x 1';
   let no = Number(fen.split(' ')[5]) || 1;
   let turn = fen.split(' ')[1] === 'b' ? 'b' : 'w';

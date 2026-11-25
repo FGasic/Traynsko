@@ -1,6 +1,6 @@
 /**
  * Modo Netero: shared by the browser app (which plays the session) and the server (which keeps records,
- * best times per line, the queue of lines to review and the daily streak).
+ * best times per line, the queue of lines to review and the Top 3 of each scope).
  *
  * Principle: the retry is training, the first pass is the exam. Only the first appearance of each node
  * (a position where the player moves, with its expected move) counts towards the score.
@@ -12,9 +12,6 @@ import type { Line } from './types';
 export const NETERO = {
   /** Average thinking time per node that still scores 100 (provisional: calibrate with real sessions). */
   t100Ms: 2000,
-  /** Lines in a daily Netero, by default, and the choices offered. */
-  dailyDefault: 5,
-  dailyOptions: [3, 5, 10],
   /** Versions kept per scope: the current record and a few previous ones. */
   keepVersions: 6,
   /** Lines remembered for review (most recent first). */
@@ -23,7 +20,8 @@ export const NETERO = {
   bestMax: 6000,
 };
 
-export type NeteroMode = 'full' | 'daily' | 'errors';
+/** `daily` is the retired daily Netero (older apps may still send it: practice). `campaign`: the memory phase of a Campaign. */
+export type NeteroMode = 'full' | 'daily' | 'errors' | 'campaign';
 export type NeteroDevice = 'movil' | 'pc';
 export type ScopeKind = 'world' | 'rep';
 
@@ -47,16 +45,19 @@ export interface NeteroRecord {
   device: NeteroDevice;
 }
 
-export interface NeteroStreak { cur: number; best: number; last: string }
+/** One place in a Top 3 (a person's best nota in a scope). */
+export interface TopEntry { id: string; name: string; nota: number; device: NeteroDevice; date: string }
+export const topKey = (kind: ScopeKind, fp: string) => `${kind}:${fp}`;
 
-/** Everything Netero keeps for one person in one repertoire (the streak is per account). */
+/** Everything Netero keeps for one person in one repertoire, and the repertoire's Top 3 lists. */
 export interface NeteroState {
   records: NeteroRecord[];
   /** best average time per move on a line's first pass (ms), by line key */
   best: Record<string, number>;
-  /** line keys with recent fails, most recent first: the daily Netero takes them first */
+  /** line keys with recent fails, most recent first: the Campaign takes them first */
   queue: string[];
-  streak: NeteroStreak;
+  /** by `topKey(kind, fp)`: the best three people (who show in rankings), and how many have a nota there */
+  tops: Record<string, { top: TopEntry[]; n: number }>;
 }
 
 /** A finished session, as the app sends it. */
@@ -73,7 +74,7 @@ export interface NeteroSummary {
   fails: number;
   lines: number;
   device: NeteroDevice;
-  /** the player's local date (YYYY-MM-DD), for the streak */
+  /** the player's local date (YYYY-MM-DD) */
   day: string;
   /** average ms per move on each line's first pass */
   lineMs: { k: string; ms: number }[];
@@ -122,7 +123,7 @@ export function scopeFingerprint(lines: { color: 'w' | 'b'; line: Pick<Line, 'fe
   return cyrb53(fps, 3) + cyrb53(fps, 5);
 }
 
-/* ---------------- days and the streak ---------------- */
+/* ---------------- days ---------------- */
 
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 export function validDay(s: unknown): s is string {
@@ -139,23 +140,6 @@ export const daysBetween = (a: string, b: string) => dayNum(b) - dayNum(a);
 export function localDay(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-export const emptyStreak = (): NeteroStreak => ({ cur: 0, best: 0, last: '' });
-
-/** A daily Netero completed on `day`. Only the first of each day counts; the others are practice. */
-export function bumpStreak(s: NeteroStreak | null, day: string): { streak: NeteroStreak; counted: boolean } {
-  const prev = s ?? emptyStreak();
-  if (prev.last && daysBetween(prev.last, day) <= 0) return { streak: prev, counted: false };
-  const cur = prev.last && daysBetween(prev.last, day) === 1 ? prev.cur + 1 : 1;
-  return { streak: { cur, best: Math.max(prev.best, cur), last: day }, counted: true };
-}
-
-/** The streak as it stands today: it is broken once a whole day has gone by without a daily Netero. */
-export function liveStreak(s: NeteroStreak | null, today: string): { cur: number; best: number; doneToday: boolean } {
-  if (!s || !s.last) return { cur: 0, best: s?.best ?? 0, doneToday: false };
-  const gap = daysBetween(s.last, today);
-  return { cur: gap <= 1 ? s.cur : 0, best: s.best, doneToday: gap <= 0 };
 }
 
 /* ---------------- records ---------------- */
@@ -207,12 +191,26 @@ export function nextBest(best: Record<string, number>, lineMs: { k: string; ms: 
   return out;
 }
 
+/** A person's entry in a scope's table: kept only if it beats their previous best. */
+export function updateTop(table: Record<string, Omit<TopEntry, 'id'>>, id: string, e: Omit<TopEntry, 'id'>): { table: Record<string, Omit<TopEntry, 'id'>>; changed: boolean } {
+  const prev = table[id];
+  if (prev && prev.nota >= e.nota) return { table, changed: false };
+  return { table: { ...table, [id]: e }, changed: true };
+}
+
+/** The visible Top 3 of a table: people who hide from rankings are left out (and not counted). */
+export function topOf(table: Record<string, Omit<TopEntry, 'id'>>, hidden: Set<string>): { top: TopEntry[]; n: number } {
+  const all = Object.entries(table).filter(([id]) => !hidden.has(id)).map(([id, e]) => ({ id, ...e }));
+  all.sort((a, b) => b.nota - a.nota || a.date.localeCompare(b.date));
+  return { top: all.slice(0, 3), n: all.length };
+}
+
 /* ---------------- untrusted input ---------------- */
 
 const KEY = /^[0-9a-z]{6,16}$/;
 const FP = /^[0-9a-z]{16,32}$/;
 const ID = /^[0-9A-Za-z_-]{1,40}$/;
-const MODES = new Set<NeteroMode>(['full', 'daily', 'errors']);
+const MODES = new Set<NeteroMode>(['full', 'daily', 'errors', 'campaign']);
 const int = (v: unknown, min: number, max: number) => (typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? Math.round(v) : null);
 const keys = (v: unknown, max: number) => (Array.isArray(v) && v.length <= max && v.every((k) => typeof k === 'string' && KEY.test(k)) ? [...new Set(v as string[])] : null);
 

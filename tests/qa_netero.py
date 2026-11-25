@@ -1,5 +1,5 @@
 # Modo Netero in the browser: full session with a fail and its repetition, pause, resume after reloading,
-# the result and its record, «Repetir solo errores», the daily and its streak, the Atlas, phones.
+# the result and its record, «Repetir solo errores», the Atlas, phones.
 # Run `DEV_FAKE_LICHESS=1 npm run dev` first; lichess.org is simulated (the code returned is the username).
 import sys, json, os
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -137,19 +137,10 @@ with sync_playwright() as p:
     check(str(nota) in first, 'the lobby shows the record')
     page.screenshot(path=f'{SHOTS}/n10-lobby-record.png', full_page=True)
 
-    # the daily: streak starts
-    page.get_by_role('button', name='Empezar diario').click(); page.wait_for_timeout(600)
-    check(state(page)['total'] == 4, 'daily: up to 5 lines (4 in this repertoire)')
-    page.locator('.netero .start-btn').click(); page.wait_for_timeout(300)
-    play(page)
-    page.wait_for_selector('.nt-report', timeout=15000); page.wait_for_timeout(1500)
-    rep = page.locator('.nt-report').inner_text()
-    check('Racha: 1 día' in rep, 'daily: the streak starts')
-    check(int(page.locator('.nt-nota').inner_text()) >= 1, 'daily: nota shown')
-    page.screenshot(path=f'{SHOTS}/n11-daily.png')
-    page.locator('.nt-report').get_by_role('button', name='Atlas').click(); page.wait_for_timeout(800)
-    atlas = page.locator('.nt-atlas').inner_text()
-    check(str(nota) in atlas and 'Racha' in atlas, 'Atlas: Netero records and streak')
+    # the Atlas: the record (the Campaign has its own check, qa_campaign.py)
+    page.locator('.tab', has_text='Atlas').click(); page.wait_for_timeout(800)
+    atlas = page.locator('.nt-atlas:not(.camp-atlas)').inner_text()
+    check(str(nota) in atlas, 'Atlas: Netero records')
     page.screenshot(path=f'{SHOTS}/n12-atlas.png', full_page=True)
     ctx.close()
 

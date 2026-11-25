@@ -90,6 +90,8 @@ export interface GameRecord {
   clocks: number[];
   linePlies: number;
   lineErrors: number;
+  /** played as the game of a Campaign */
+  mode?: 'campaign';
   date: string;
 }
 

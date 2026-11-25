@@ -1,7 +1,8 @@
 import { useMemo } from 'preact/hooks';
 import { PIECE_SVG } from '../generated/pieces';
 import { lineFingerprint, type Medal, type UserInfo } from '../../shared/atlas';
-import { liveStreak, localDay, notaText, recordFor, scopeFingerprint, scopeLines, type NeteroRecord, type NeteroScope, type NeteroState } from '../../shared/netero';
+import { localDay, notaText, recordFor, scopeFingerprint, scopeLines, topKey, type NeteroRecord, type NeteroScope, type NeteroState, type TopEntry } from '../../shared/netero';
+import { CAMPAIGN, streakToday, type CampaignView } from '../../shared/campaign';
 import type { Line, Repertoire } from '../../shared/types';
 import { fmtDuration, fmtSec } from '../lib/netero';
 import { Icon, PieceDot } from './parts';
@@ -17,15 +18,70 @@ export function RecordFacts({ rec }: { rec: NeteroRecord }) {
   );
 }
 
-/** The Netero record of a scope as it is now (or the latest of a previous version). */
-function NeteroRecordRow({ label, scope, fp, records }: { label: string; scope: NeteroScope; fp: string | null; records: NeteroRecord[] }) {
-  const { current, previous } = fp ? recordFor(records, scope, fp) : { current: null, previous: null };
+/** The Top 3 of a scope, shown only when the repertoire is shared (at least two people with a nota there). */
+export function TopThree({ entry, me }: { entry: { top: TopEntry[]; n: number } | undefined; me?: string }) {
+  if (!entry || entry.n < 2) return null;
+  return (
+    <ol class="nt-top" aria-label="Top 3">
+      {entry.top.map((t, i) => (
+        <li class={t.id === me ? 'me' : ''}>
+          <span class="nt-top-pos">{i + 1}</span>
+          <span class="nt-top-name">{t.name}</span>
+          <b>{notaText(t.nota)}</b>
+          <small>{t.device === 'movil' ? 'móvil' : 'PC'}</small>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** The Netero record of a scope as it is now (or the latest of a previous version), and its Top 3. */
+function NeteroRecordRow({ label, scope, fp, netero, me }: { label: string; scope: NeteroScope; fp: string | null; netero: NeteroState; me?: string }) {
+  const { current, previous } = fp ? recordFor(netero.records, scope, fp) : { current: null, previous: null };
   return (
     <div class={`nt-atlas-row ${current ? '' : 'is-empty'}`}>
       <span class="nt-atlas-label">{label}</span>
       {current ? <><span class="nt-rec-nota">{notaText(current.nota)}</span><RecordFacts rec={current} /></> : <span class="nt-rec-none">Sin récord</span>}
       {!current && previous && <span class="nt-rec-prev">Versión anterior: {notaText(previous.nota)} ({fmtDate(previous.date)})</span>}
+      <TopThree entry={fp ? netero.tops[topKey(scope.kind, fp)] : undefined} me={me} />
     </div>
+  );
+}
+
+const RESULT_MARK = { win: '1', draw: '½', loss: '0' } as const;
+
+/** The Campaign: streak and truces (per account), the rival's Level here, the latest results, the rivals collected. */
+function CampaignPanel({ view, onOpen }: { view: CampaignView; onOpen(): void }) {
+  const st = streakToday(view.streak, localDay());
+  const c = view.campaign;
+  const last = c?.history.slice(-10) ?? [];
+  return (
+    <section class="panel nt-atlas camp-atlas" aria-label="Campaña">
+      <div class="panel-head">
+        <h2 class="section-title">Campaña</h2>
+        <span class="nt-streak">{st.doneToday ? 'Hoy: hecha' : 'Hoy: pendiente'}</span>
+      </div>
+      <div class="camp-stats">
+        <div><b>{st.cur}</b><span>{st.cur === 1 ? 'día de racha' : 'días de racha'}</span></div>
+        <div><b>{st.best}</b><span>mejor racha</span></div>
+        <div><b>{st.truces}<small> / {CAMPAIGN.truceMax}</small></b><span>{st.truces === 1 ? 'tregua' : 'treguas'}</span></div>
+        <div><b>{c ? c.level : '—'}</b><span>nivel del rival</span></div>
+        <div><b>{c ? c.max : '—'}</b><span>nivel máximo</span></div>
+      </div>
+      {last.length > 0 && (
+        <div class="camp-history" aria-label="Últimas partidas de Campaña">
+          {last.map((h) => <span class={`camp-dot ${h.result}`} title={`${h.day} · ${h.rival} (${h.level}) · ${h.result === 'win' ? 'victoria' : h.result === 'draw' ? 'tablas' : 'derrota'}`}>{RESULT_MARK[h.result]}</span>)}
+          {c && <span class="camp-start-note">empezó en {c.start}</span>}
+        </div>
+      )}
+      <div class="camp-rivals">
+        <span class="eyebrow">Colección de rivales · {view.rivals.length}</span>
+        {view.rivals.length === 0
+          ? <p class="help">Cada GM al que ganes o hagas tablas en la Campaña se queda aquí.</p>
+          : <ul>{view.rivals.map((r) => <li class={r.result}><b>{r.name}</b><small>{r.result === 'win' ? 'victoria' : 'tablas'} · {r.level}{r.count > 1 ? ` · ×${r.count}` : ''}</small></li>)}</ul>}
+      </div>
+      {!c && <div class="row-actions"><button type="button" class="btn ghost small" onClick={onOpen}><Icon name="netero" size={16} />Empezar la Campaña</button></div>}
+    </section>
   );
 }
 
@@ -81,8 +137,10 @@ interface Props {
   onRetry(): void;
   worldId: string;
   worldName: string;
-  /** Modo Netero: records and streak (null while loading) */
+  /** Modo Netero: records and Top 3 lists (null while loading) */
   netero: NeteroState | null;
+  /** the Campaign (null while loading) */
+  campaign: CampaignView | null;
   onOpenNetero(): void;
 }
 
@@ -90,7 +148,7 @@ type Entry = { line: Line; index: number; state: BadgeState; medal?: Medal };
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' });
 
-export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onRetry, worldId, worldName, netero, onOpenNetero }: Props) {
+export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onRetry, worldId, worldName, netero, campaign, onOpenNetero }: Props) {
   // Netero records belong to the content as it is now: the fingerprint of the repertoire and of each chapter
   const neteroFps = useMemo(() => {
     const fp = (scope: { kind: 'world' | 'rep'; id: string }) => {
@@ -99,7 +157,6 @@ export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onR
     };
     return { world: fp({ kind: 'world', id: worldId }), reps: new Map(reps.map((r) => [r.id, fp({ kind: 'rep', id: r.id })])) };
   }, [reps, worldId]);
-  const streak = liveStreak(netero?.streak ?? null, localDay());
   const chapters = useMemo(() => {
     if (!medals) return [];
     const byFp = new Map(medals.map((m) => [m.fp, m]));
@@ -149,18 +206,18 @@ export function AtlasScreen({ reps, user, medals, error, signingIn, onLogin, onR
             <div><b>{total ? Math.floor((earned / total) * 100) : 0}%</b><span>del Atlas</span></div>
             <div><b>{stale}</b><span>por revalidar</span></div>
           </div>
+          {campaign && reps.length > 0 && <CampaignPanel view={campaign} onOpen={onOpenNetero} />}
           {reps.length > 0 && (
             <section class="panel nt-atlas" aria-label="Récords Netero">
               <div class="panel-head">
                 <h2 class="section-title">Récords Netero</h2>
-                <span class="nt-streak" title="Días seguidos con al menos un Netero diario">Racha <b>{streak.cur}</b> {streak.cur === 1 ? 'día' : 'días'} · mejor {streak.best}</span>
               </div>
               {!netero && <div class="loading"><div class="spinner small" />Cargando récords…</div>}
               {netero && (
                 <>
-                  <NeteroRecordRow label="Repertorio completo" scope={{ kind: 'world', id: worldId, name: worldName }} fp={neteroFps.world} records={netero.records} />
+                  <NeteroRecordRow label="Repertorio completo" scope={{ kind: 'world', id: worldId, name: worldName }} fp={neteroFps.world} netero={netero} me={user?.id} />
                   {reps.length > 1 && reps.map((rep) => (
-                    <NeteroRecordRow label={rep.name} scope={{ kind: 'rep', id: rep.id, name: rep.name }} fp={neteroFps.reps.get(rep.id) ?? null} records={netero.records} />
+                    <NeteroRecordRow label={rep.name} scope={{ kind: 'rep', id: rep.id, name: rep.name }} fp={neteroFps.reps.get(rep.id) ?? null} netero={netero} me={user?.id} />
                   ))}
                 </>
               )}
