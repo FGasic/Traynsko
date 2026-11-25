@@ -1,6 +1,8 @@
 // Per-device storage: training preferences, the open world session and the master session.
 import { DEFAULT_BOTS } from './bots';
 import type { PublicWorld } from '../../shared/types';
+import { NETERO } from '../../shared/netero';
+import type { Snapshot } from './netero';
 
 export interface Settings {
   v: number;
@@ -24,6 +26,8 @@ export interface Settings {
   lastLineId?: string;
   /** chapters switched off, per world: superseded by the selection of lines (read once, to carry it over) */
   disabledReps: Record<string, string[]>;
+  /** Modo Netero: lines in a daily session */
+  neteroDaily: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -43,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   lineOrder: 'random',
   orderAt: {},
   disabledReps: {},
+  neteroDaily: NETERO.dailyDefault,
 };
 
 /** Quick time controls (minutes + increment in seconds). */
@@ -96,6 +101,9 @@ export const prefs = {
   /** Trayner's latest rivals on this device, newest first (so a name doesn't come back soon). */
   recentRivals: () => get<string[]>('rivals', []),
   saveRecentRivals: (list: string[]) => put('rivals', list),
+  /** Modo Netero: the session in progress in a repertoire, saved after every move (to resume after closing). */
+  netero: (worldId: string) => get<Snapshot | null>('netero:' + worldId, null),
+  saveNetero: (worldId: string, s: Snapshot | null) => put('netero:' + worldId, s),
   lastName: () => get<string>('name', ''),
   saveLastName: (n: string) => put('name', n),
 };

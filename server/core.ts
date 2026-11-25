@@ -5,6 +5,10 @@ import { playerKey } from '../shared/types';
 import { ACCOUNT_PREFIX, accountKey, lineFingerprint, type Medal, type UserInfo } from '../shared/atlas';
 import { lichessClient, type LichessClient } from './lichess';
 import { cleanPicks, type Picks } from '../shared/picks';
+import {
+  applyRecord, bumpStreak, cleanSummary, daysBetween, emptyStreak, neteroScore, nextBest, nextQueue, recordFor, scopeFingerprint, scopeLines,
+  type NeteroRecord, type NeteroScope, type NeteroState, type NeteroStreak,
+} from '../shared/netero';
 
 export interface Req {
   method: string;
@@ -33,6 +37,7 @@ interface WorldDoc {
   reps: RepMeta[];
 }
 interface WorldStats { players: Record<string, PlayerStats> }
+type NeteroDoc = Omit<NeteroState, 'streak'>;
 interface UserDoc {
   id: string;        // Lichess id (lower case)
   name: string;      // Lichess username as displayed
@@ -64,6 +69,10 @@ const K = {
   members: (worldId: string) => `tr:wm:${worldId}`,
   /** each person's selection of lines and sets in a repertoire (field: player key) */
   picks: (worldId: string) => `tr:wp:${worldId}`,
+  /** Modo Netero, per account and repertoire: records, best time per line, lines to review */
+  netero: (worldId: string, userId: string) => `tr:nt:${worldId}:${userId}`,
+  /** Modo Netero: the daily streak, per account */
+  neteroStreak: (userId: string) => `tr:ns:${userId}`,
   rl: (scope: string, ip: string) => `tr:rl:${scope}:${ip}`,
 };
 
@@ -417,13 +426,14 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       const ak = accountKey(u.id);
       for (const w of await allWorlds(kv)) {
         await kv.hdel(K.picks(w.id), ak);
+        await kv.del(K.netero(w.id, u.id));
         const m = await memberOf(kv, w.id, ak);
         if (!m) continue;
         if (m.blocked) await kv.hset(K.members(w.id), ak, { ...m, name: 'Cuenta borrada' });   // a block survives the account
         else await kv.hdel(K.members(w.id), ak);
       }
       const claimKeys = u.claims.map((c) => { const [w, gk] = c.split('|'); return K.claim(w, gk); });
-      await kv.del(K.userGames(u.id), K.medals(u.id), K.user(u.id), ...claimKeys);
+      await kv.del(K.userGames(u.id), K.medals(u.id), K.user(u.id), K.neteroStreak(u.id), ...claimKeys);
       return { status: 200, body: { ok: true, games: games.length } };
     }
 
@@ -501,6 +511,67 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       await limit(kv, 'picks', req.ip, 900, 3600);
       await kv.hset(K.picks(wa.world.id), who, picks);
       return { status: 200, body: { ok: true, synced: true } };
+    }
+
+    /* ---------- Modo Netero (account only: without one, nothing is kept) ---------- */
+    if (a === 'netero' && !b && (M === 'GET' || M === 'POST')) {
+      const { world, user } = await worldUser(kv, req);
+      const load = async () => {
+        const doc = (await kv.get<NeteroDoc>(K.netero(world.id, user.id))) ?? { records: [], best: {}, queue: [] };
+        const streak = (await kv.get<NeteroStreak>(K.neteroStreak(user.id))) ?? emptyStreak();
+        return { doc, streak };
+      };
+      if (M === 'GET') {
+        const { doc, streak } = await load();
+        const state: NeteroState = { ...doc, streak };
+        return { status: 200, body: { netero: state } };
+      }
+      await limit(kv, 'netero', req.ip, 240, 3600);
+      const s = cleanSummary(req.body?.session);
+      if (!s) fail(400, 'invalid', 'Sesión Netero no válida.');
+      // the player's date may differ from the server's by the time zone, never by more
+      const today = new Date().toISOString().slice(0, 10);
+      if (Math.abs(daysBetween(today, s!.day)) > 1) fail(400, 'invalid', 'La fecha del dispositivo no es válida.');
+      const score = neteroScore(s!.nodes, s!.firstTry, s!.thinkMs);
+      // a record needs the whole scope, as it is now on the server
+      let scope: NeteroScope | null = null;
+      if (s!.eligible && s!.scope) {
+        const docs = await kv.mget<{ lines: Line[] }>(world.reps.map((r) => K.rep(r.id)));
+        const reps = world.reps.map((r, i) => ({ ...r, lines: docs[i]?.lines ?? [] }));
+        const sc = s!.scope;
+        const rep = sc.kind === 'rep' ? reps.find((r) => r.id === sc.id) : undefined;
+        const fits = sc.kind === 'world' ? sc.id === world.id : !!rep;
+        if (fits) {
+          const lines = scopeLines(reps, sc).map((x) => ({ color: x.rep.color, line: x.line }));
+          if (lines.length && scopeFingerprint(lines) === s!.fp) scope = { kind: sc.kind, id: sc.id, name: sc.kind === 'world' ? world.name : rep!.name };
+        }
+      }
+      const { doc, streak } = await load();
+      let isRecord = false;
+      let prev: NeteroRecord | null = null;
+      let record: NeteroRecord | null = null;
+      if (scope) {
+        const rec: NeteroRecord = {
+          fp: s!.fp!, scope, nota: score.nota, precision: score.precision, ritmo: score.ritmo,
+          nodes: s!.nodes, firstTry: s!.firstTry, thinkMs: s!.thinkMs, totalMs: s!.totalMs, fails: s!.fails, lines: s!.lines,
+          date: new Date().toISOString(), device: s!.device,
+        };
+        const r = applyRecord(doc.records, rec);
+        doc.records = r.records;
+        isRecord = r.isRecord;
+        prev = r.prev;
+        record = recordFor(doc.records, scope, rec.fp).current;
+      }
+      doc.best = nextBest(doc.best, s!.lineMs);
+      doc.queue = nextQueue(doc.queue, s!.failed, s!.clean);
+      await kv.set(K.netero(world.id, user.id), doc);
+      let nextStreak = streak, counted = false;
+      if (s!.mode === 'daily') {
+        ({ streak: nextStreak, counted } = bumpStreak(streak, s!.day));
+        if (counted) await kv.set(K.neteroStreak(user.id), nextStreak);
+      }
+      const state: NeteroState = { ...doc, streak: nextStreak };
+      return { status: 200, body: { netero: state, result: { nota: score.nota, recordable: !!scope, isRecord, prev, record, counted } } };
     }
 
     /* ---------- student or admin ---------- */
@@ -641,6 +712,9 @@ export function createApp(getKV: () => Promise<KV>, masterHash: string | undefin
       if (b === 'worlds' && c && !d && M === 'DELETE') {
         const w = await loadWorld(kv, c);
         const gameIds = await kv.zrevrange(K.worldGames(w.id), 0, -1);
+        // each account's Netero data in this repertoire (accounts that entered are members)
+        const accounts = Object.keys(await kv.hgetall<Member>(K.members(w.id))).filter((id) => id.startsWith(ACCOUNT_PREFIX));
+        if (accounts.length) await kv.del(...accounts.map((id) => K.netero(w.id, id.slice(ACCOUNT_PREFIX.length))));
         await kv.del(...gameIds.map(K.game), ...w.reps.map((r) => K.rep(r.id)), K.worldGames(w.id), K.stats(w.id), K.world(w.id), K.members(w.id), K.picks(w.id));
         const ids = (await kv.get<string[]>(K.worlds)) ?? [];
         await kv.set(K.worlds, ids.filter((x) => x !== w.id));

@@ -1,6 +1,10 @@
 import type { AdminWorld, Emblem, GameRecord, GameSummary, Line, Member, PublicWorld, RepMeta, Repertoire } from '../../shared/types';
 import type { Medal, UserInfo } from '../../shared/atlas';
 import type { Picks } from '../../shared/picks';
+import type { NeteroRecord, NeteroState, NeteroSummary } from '../../shared/netero';
+
+/** What the server says about a finished Netero session. */
+export interface NeteroResult { nota: number; recordable: boolean; isRecord: boolean; prev: NeteroRecord | null; record: NeteroRecord | null; counted: boolean }
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string) { super(message); }
@@ -71,6 +75,9 @@ export const api = {
   savePicks: (t: string, picks: Picks, keepalive = false) => call<{ ok: true; synced: boolean }>('PUT', 'picks', { picks }, t, keepalive),
   awardMedal: (t: string, m: { repId: string; lineId: string; startPly: number; errors: number; hints: number }) =>
     call<{ medal: Medal; isNew: boolean }>('POST', 'medals', m, t),
+  /** Modo Netero in the open repertoire: records, best times, lines to review and the daily streak (account only). */
+  netero: (t: string) => call<{ netero: NeteroState }>('GET', 'netero', undefined, t).then((r) => r.netero),
+  saveNetero: (t: string, session: NeteroSummary) => call<{ netero: NeteroState; result: NeteroResult }>('POST', 'netero', { session }, t),
 
   admin: {
     login: (password: string) => call<{ token: string }>('POST', 'admin/login', { password }).then((r) => r.token),

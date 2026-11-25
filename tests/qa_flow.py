@@ -56,7 +56,7 @@ def main():
         # ---------- the board waits ----------
         expect(page.locator('.train .ready-layer').count() == 1, 'opening a repertoire: the board waits for «Comenzar partida»')
         tabs = [t.strip().lower() for t in page.locator('.tabs .tab span').all_inner_texts()]
-        expect(tabs[:3] == ['entrenar', 'partidas', 'biblioteca'], f'tab order {tabs}')
+        expect(tabs[:4] == ['entrenar', 'netero', 'partidas', 'biblioteca'], f'tab order {tabs}')
         c0, f0 = clocks(page), page.evaluate(FEN)
         page.wait_for_timeout(2500)
         expect(clocks(page) == c0 and page.evaluate(FEN) == f0, 'nothing moves and no clock runs before starting')

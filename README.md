@@ -15,6 +15,18 @@ Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el 
 - Con el color contrario repites las respuestas de la línea mientras tu repertorio juega solo; no se ganan emblemas.
 - Salir de una partida en curso (otro repertorio, la Sala) pide confirmación.
 
+## Modo Netero
+
+Entrenamiento solo de la apertura, en su propia pestaña. Principio: **el reintento es entrenamiento; la primera pasada es examen.**
+
+- **Mecánica**: cada línea se juega desde la jugada 1 y el rival responde al instante. Una jugada incorrecta suma un *fail* y se retira; tras tres intentos se puede ver la jugada. Si la línea tuvo algún fail, se repite desde el principio hasta hacerla limpia; solo entonces llega la siguiente.
+- **Modalidades**: *Netero completo* (todas las líneas activas del repertorio o de un capítulo, en orden aleatorio), *Netero diario* (3, 5 o 10 líneas; primero las fallidas hace poco) y *Repetir solo errores* (desde el resultado).
+- **Nota** = 100 × Precisión × Ritmo. Precisión: jugadas acertadas al primer intento / jugadas. Ritmo: min(1, t₁₀₀ / tiempo medio), con t₁₀₀ = 2,0 s (`NETERO.t100Ms` en `shared/netero.ts`, provisional). Cada jugada (posición + jugada esperada) cuenta una sola vez, la primera vez que aparece, así que el tronco común no infla la nota. El tiempo corre desde que la posición queda lista hasta la jugada correcta, sin animaciones, sin el destello del error y sin pausas. Las repeticiones no puntúan.
+- **Récords** (con cuenta de Lichess): personales, uno por repertorio completo y por capítulo, en el Atlas y en la portada de Netero. Solo cuentan si todas las líneas del alcance están activas (si no, la sesión es práctica). El récord va ligado a una huella del contenido, que el servidor comprueba: si el capítulo cambia, el anterior queda como «versión anterior».
+- **Racha**: un Netero diario completado al día; el segundo del mismo día es práctica.
+- **Pausa**: manual o automática al cambiar de pestaña, de aplicación o de ventana; el tablero se oculta y el cronómetro se detiene. La sesión se guarda en el dispositivo tras cada jugada y se puede continuar después de cerrar la app.
+- Una primera pasada limpia otorga el emblema de la línea si aún no lo tenía.
+
 ## Acceso por persona (Sala del maestro → Usuarios)
 
 - Cada entrada a un repertorio queda registrada por persona: la cuenta de Lichess si la hay, si no el nombre escrito.
@@ -74,6 +86,13 @@ Cuentas y emblemas, con Lichess simulado (el código devuelto se toma como nombr
 ```bash
 DEV_FAKE_LICHESS=1 npm run dev
 python3 tests/e2e_accounts.py /tmp/qa
+```
+
+Modo Netero, con Lichess simulado (sesión con un fail y su repetición, pausa, continuar tras recargar, récord, repetir errores, diario y racha, Atlas, móviles):
+
+```bash
+DEV_FAKE_LICHESS=1 npm run dev
+python3 tests/qa_netero.py /tmp/qa
 ```
 
 Tablas en un final de torres (con `npm run dev` y datos limpios):
