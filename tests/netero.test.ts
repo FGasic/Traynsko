@@ -6,7 +6,7 @@ import {
   type NeteroRecord, type NeteroSummary,
 } from '../shared/netero';
 import { lineKey } from '../shared/picks';
-import { ANIM_MS, WRONG_MS, NeteroRun, planCampaign, planDaily, planErrors, planFromKeys, planFull, userPlies, type Plan } from '../src/lib/netero';
+import { ANIM_MS, WRONG_MS, NeteroRun, drawPause, lineNodes, planCampaign, planDaily, planErrors, planFromKeys, planFull, userPlies, type Plan } from '../src/lib/netero';
 import type { Line, Repertoire } from '../shared/types';
 import { createApp } from '../server/core';
 import { memoryKV } from '../server/kv';
@@ -51,6 +51,17 @@ function play(run: NeteroRun, clock: { t: number }, think: (i: number) => number
     }
     break;
   }
+}
+
+/** Like `play`, noting where each pass of each line started: its first asked node and the autopilot's end. */
+function track(run: NeteroRun, clock: { t: number }, think: (i: number) => number, fail: (i: number, pass: number) => number | null = () => null) {
+  const starts: { idx: number; pass: number; start: number; auto: number }[] = [];
+  const note = () => starts.push({ idx: run.idx, pass: run.pass, start: run.lineStartIdx, auto: run.autoUntil });
+  note();
+  const next = run.next.bind(run);
+  run.next = () => { const s = next(); if (s && s !== 'finish') note(); return s; };
+  play(run, clock, think, fail);
+  return starts;
 }
 
 (async () => {
@@ -201,6 +212,101 @@ function play(run: NeteroRun, clock: { t: number }, think: (i: number) => number
   play(back, clock, () => 1000);
   check(back.status === 'done' && back.live.nodes === 12 && back.live.nota === 100, 'resumed session finishes normally');
   check(NeteroRun.restore(snap, [rep('benko1', 'Benko Principal', 'b', benko.slice(1))]) === null, 'a session whose lines are gone cannot be resumed');
+
+  /* ---------- v1.1: autopilot, pause and repetition near the fail ---------- */
+  check(drawPause(() => 0) === 5 && drawPause(() => 0.9999) === 9, 'k is drawn between 5 and 9');
+  // Benko Principal: trunks of 3–4 of the player's moves, under the threshold: every line is asked from the first move
+  {
+    const c = { t: 0 };
+    const r = new NeteroRun(plan, 'w1', () => c.t, seeded(4));
+    const st = track(r, c, () => 1000);
+    check(st.filter((x) => x.pass === 1).every((x) => x.start === 0 && x.auto === 0), 'short trunks: asked from the first move (as in v1)');
+  }
+  // a Sveshnikov trunk up to 9.Bxf6 gxf6 (9 moves of Black) and ten lines that leave it at move 10
+  const TRUNK = 'e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 e7e5 d4b5 d7d6 c1g5 a7a6 b5a3 b7b5 g5f6 g7f6';
+  const trunkPos = new Chess();
+  for (const u of TRUNK.split(' ')) trunkPos.move({ from: u.slice(0, 2), to: u.slice(2, 4) });
+  const tenth = trunkPos.moves({ verbose: true }).slice(0, 10).map((m) => m.from + m.to + (m.promotion ?? ''));
+  const sveshLines: Line[] = tenth.map((w, i) => {
+    const c2 = new Chess(trunkPos.fen());
+    c2.move({ from: w.slice(0, 2), to: w.slice(2, 4) });
+    const b = c2.moves({ verbose: true })[0];
+    return { id: `s${i}`, event: 'Sveshnikov', white: `10.${w}`, black: '', uci: `${TRUNK} ${w} ${b.from}${b.to}${b.promotion ?? ''}` };
+  });
+  const svesh = [rep('svesh', 'Sveshnikov', 'b', sveshLines)];
+  const fixed = (lines: Line[]): Plan => {
+    const items = lines.map((line) => ({ key: lineKey(line), rep: svesh[0], line }));
+    return { mode: 'errors', scope: null, fp: null, eligible: false, lines: items, inScope: items.length, activeInScope: items.length };
+  };
+  check(lineNodes(sveshLines[0], 'b').length === 10 && lineNodes(sveshLines[0], 'b')[9].ply === 19, 'nodes of a line: 9 of the trunk + 1, the 10th at ply 19');
+  for (const seed of [1, 2, 3, 7, 11]) {
+    const c = { t: 0 };
+    const p10 = planFull(svesh, new Set(), { kind: 'rep', id: 'svesh', name: 'Sveshnikov' }, seeded(seed));
+    const r = new NeteroRun(p10, 'w1', () => c.t, seeded(seed * 13));
+    const st = track(r, c, () => 1000).filter((x) => x.pass === 1);
+    const full = st.map((x, i) => (x.start === 0 ? i : -1)).filter((i) => i >= 0);
+    const rest = st.filter((x) => x.start !== 0);
+    check(full.length === 2 && full[0] === 0 && full[1] >= 5 && full[1] <= 9, `ten lines (seed ${seed}): the trunk is asked in the 1st line and again in one of the 6th–10th`);
+    check(rest.every((x) => x.start === 9 && x.auto === 19), `ten lines (seed ${seed}): the others play the trunk themselves and ask from move 10`);
+    check(r.live.nodes === 19 && r.live.firstTry === 19 && near(r.live.thinkMs, 19 * 1000) && r.live.nota === 100, `ten lines (seed ${seed}): 19 nodes, each scored once (the trunk asked again does not count)`);
+    const sm = r.summary('pc', '2026-11-26');
+    check(sm.lineMs.length === 2 && sm.clean.length === 10, `ten lines (seed ${seed}): best times only from the lines asked from the first move`);
+  }
+  // a fail in the trunk: the repetition starts 2 moves before it; the next line asks from the failed node
+  {
+    const c = { t: 0 };
+    const r = new NeteroRun(fixed(sveshLines.slice(0, 3)), 'w1', () => c.t, seeded(5));
+    const st = track(r, c, () => 1000, (i, pass) => (i === 6 && pass === 1 ? 300 : null));
+    const rep1 = st.find((x) => x.idx === 0 && x.pass === 2);
+    const line2 = st.find((x) => x.idx === 1 && x.pass === 1);
+    const line3 = st.find((x) => x.idx === 2 && x.pass === 1);
+    check(!!rep1 && rep1.auto === 9, 'repetition: starts 2 of the player\'s moves before the fail (node 4, ply 9)');
+    check(!!line2 && line2.start === 6 && line2.auto === 13, 'next line: plays itself up to the failed node, and asks from there');
+    check(!!line3 && line3.start === 9, 'once right again, the failed node is paused too');
+    check(r.fails === 1 && r.live.firstTry === 11 && r.live.nodes === 12, 'score: the failed node stays failed (first appearance only)');
+  }
+  // a fail at the new move of a line that skipped its trunk: the repetition does not go back past the line's start
+  {
+    const c = { t: 0 };
+    const r = new NeteroRun(fixed(sveshLines.slice(0, 2)), 'w1', () => c.t, seeded(5));
+    const st = track(r, c, () => 1000, (i, pass) => (i === 10 && pass === 1 ? 300 : null));
+    const rep2 = st.find((x) => x.idx === 1 && x.pass === 2);
+    check(!!rep2 && rep2.auto === 19, 'repetition: never before the line\'s start');
+    check(r.summary('pc', '2026-11-26').failed.length === 1, 'the line with the fail is reported');
+  }
+  // a line with nothing new (it ends with a rival move already seen): asks at least its last move
+  {
+    const c = { t: 0 };
+    const prefix: Line = { ...sveshLines[0], id: 'pre', uci: sveshLines[0].uci.split(' ').slice(0, 19).join(' ') };
+    const r = new NeteroRun(fixed([sveshLines[0], prefix]), 'w1', () => c.t, seeded(5));
+    const st = track(r, c, () => 1000);
+    const l2 = st.find((x) => x.idx === 1 && x.pass === 1);
+    check(!!l2 && l2.start === 8 && l2.auto === 17 && r.status === 'done', 'all known: the line asks its last move');
+  }
+  // the autopilot is not timed, and it survives closing the app
+  {
+    const c = { t: 0 };
+    const r = new NeteroRun(fixed(sveshLines.slice(0, 2)), 'w1', () => c.t, seeded(5));
+    r.begin();
+    for (let g = 0; g < 200 && !(r.idx === 1 && r.status === 'play' && r.ply === 6); g++) {
+      if (r.status === 'between') { c.t += 900; r.next(); }
+      else if (r.autoDue) { c.t += 250; r.autoMove(); }
+      else if (r.userTurn) { c.t += ANIM_MS + 1000; r.userMove(r.expected!); }
+    }
+    check(r.inAutopilot && !r.userTurn && r.autoDue && r.userMove('e7e5').kind === 'ignored', 'autopilot: the board takes no moves');
+    const memoSize = r.memo.size;
+    const snap2 = JSON.parse(JSON.stringify(r.snapshot()));
+    check(snap2.v === 2 && snap2.autoUntil === 19, 'snapshot keeps the autopilot');
+    const back2 = NeteroRun.restore(snap2, svesh, () => c.t)!;
+    check(!!back2 && back2.autoUntil === 19 && back2.memo.size === memoSize && back2.lineStartIdx === 9, 'restored with its autopilot');
+    back2.resume();
+    play(back2, c, () => 1000);
+    check(back2.status === 'done' && back2.live.nodes === 11 && near(back2.live.thinkMs, 11 * 1000), 'resumed: the autopilot finishes, untimed');
+    const v1 = { ...snap2, v: 1 };
+    for (const k of ['autoUntil', 'lineStartIdx', 'repeatIdx', 'firstFailIdx', 'passK', 'memo']) delete v1[k];
+    const old = NeteroRun.restore(v1, svesh, () => c.t);
+    check(!!old && old.autoUntil === 0 && old.memo.size === 0, 'a session saved before v1.1 resumes, asking everything');
+  }
 
   /* ---------- untrusted summaries ---------- */
   const good: NeteroSummary = sum;

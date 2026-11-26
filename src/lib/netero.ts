@@ -2,16 +2,22 @@
  * Modo Netero: the session engine, with no UI. The screen drives it (moves, the rival's replies, pauses) and
  * reads its state; a clock function can be injected so the timing is testable.
  *
- * - Lines are played from the first move. A wrong move adds a fail and is taken back; the player tries again.
- * - A line with any fail must then be repeated from the start until a pass comes out clean.
- * - Score: each node (position where the player moves + expected move) counts once, at its first appearance.
- *   Its time runs from the moment the position is ready (after the rival's animation) to the right move,
- *   leaving out animations, the wrong-move glow and pauses.
+ * - A wrong move adds a fail and is taken back; the player tries again.
+ * - Autopilot (v1.1): what was already right in the session plays itself. Each node right at the first try is
+ *   paused: it plays itself in its next k − 1 appearances and is asked again at the k-th (k drawn once per pass,
+ *   so a trunk comes back as a block). A line plays itself up to its start: the first of the player's nodes that
+ *   is new, failed or due; from there everything is asked. If that would skip fewer than `NETERO.autoMinMoves`
+ *   of the player's moves, the line is asked from the first move.
+ * - A line with any fail must then be repeated until a pass comes out clean. The repetition starts
+ *   `NETERO.repeatContext` of the player's moves before the first failed one (never before the line's start).
+ * - Score: each node (position where the player moves + expected move) counts once, at its first appearance,
+ *   which is always asked. Its time runs from the moment the position is ready (after the rival's animation)
+ *   to the right move, leaving out animations, the autopilot, the wrong-move glow and pauses.
  */
 import { Chess, type Move, type Square } from 'chess.js';
 import type { Line, Repertoire } from '../../shared/types';
 import { lineKey } from '../../shared/picks';
-import { neteroScore, scopeFingerprint, scopeLines, type NeteroDevice, type NeteroMode, type NeteroScope, type NeteroSummary, type Score } from '../../shared/netero';
+import { NETERO, neteroScore, scopeFingerprint, scopeLines, type NeteroDevice, type NeteroMode, type NeteroScope, type NeteroSummary, type Score } from '../../shared/netero';
 import { START_FEN } from './pgn';
 
 /** Chessground's move animation (Board.tsx): the position is not ready to read before it ends. */
@@ -20,6 +26,8 @@ export const ANIM_MS = 180;
 export const WRONG_MS = 260;
 /** Wrong tries at one node before the move can be shown. */
 export const HINT_AFTER = 3;
+/** Each move of the autopilot (both sides). */
+export const AUTOPILOT_MS = 200;
 
 export interface PlanLine { key: string; rep: Repertoire; line: Line }
 
@@ -119,8 +127,10 @@ export interface LineEnd {
   key: string;
   clean: boolean;
   pass: number;
-  /** average ms per move on this line's first pass (null on a repetition) */
+  /** average ms per asked move on this line's first pass (null on a repetition) */
   avgMs: number | null;
+  /** the first pass was asked from the first move (only then is its average compared with the best one) */
+  full: boolean;
   next: 'repeat' | 'next' | 'finish';
 }
 
@@ -137,16 +147,16 @@ export interface FailEntry {
   title: string;
 }
 
-export interface LineResult { key: string; firstClean: boolean; avgMs: number | null; passes: number }
+export interface LineResult { key: string; firstClean: boolean; avgMs: number | null; passes: number; full?: boolean }
 
 export type MoveResult =
   | { kind: 'ok'; move: Move; end?: LineEnd }
   | { kind: 'wrong'; uci: string }
   | { kind: 'ignored' };
 
-/** What is kept on the device after each move, to resume after closing the app. */
+/** What is kept on the device after each move, to resume after closing the app (v1: before the autopilot). */
 export interface Snapshot {
-  v: 1;
+  v: 1 | 2;
   worldId: string;
   mode: NeteroMode;
   scope: NeteroScope | null;
@@ -175,10 +185,34 @@ export interface Snapshot {
   activeMs: number;
   startedAt: string;
   savedAt: string;
+  /* v2: the autopilot */
+  autoUntil?: number;
+  lineStartIdx?: number;
+  repeatIdx?: number;
+  firstFailIdx?: number | null;
+  passK?: number;
+  memo?: [string, number][];
 }
 
 const fen4 = (fen: string) => fen.split(' ').slice(0, 4).join(' ');
 const uciObj = (u: string) => ({ from: u.slice(0, 2) as Square, to: u.slice(2, 4) as Square, promotion: u[4] });
+
+/** The player's nodes of a line, in order: the ply where each comes and its key (position + expected move). */
+export function lineNodes(line: Line, color: 'w' | 'b'): { ply: number; node: string }[] {
+  const chess = new Chess(line.fen ?? START_FEN);
+  const moves = line.uci.split(' ').filter(Boolean);
+  const out: { ply: number; node: string }[] = [];
+  try {
+    for (let i = 0; i < moves.length; i++) {
+      if (chess.turn() === color) out.push({ ply: i, node: `${fen4(chess.fen())}|${moves[i]}` });
+      chess.move(uciObj(moves[i]));
+    }
+  } catch { /* a broken line: its nodes up to there */ }
+  return out;
+}
+
+/** k: a node right at the first try plays itself in its next k − 1 appearances. */
+export const drawPause = (rng: Rng = Math.random) => NETERO.pauseMin + Math.floor(rng() * (NETERO.pauseMax - NETERO.pauseMin + 1));
 
 export class NeteroRun {
   status: RunStatus = 'ready';
@@ -201,6 +235,20 @@ export class NeteroRun {
   results: LineResult[] = [];
   lastEnd: LineEnd | null = null;
   startedAt = new Date().toISOString();
+  /** plies before this one play themselves (the autopilot) */
+  autoUntil = 0;
+  /** autopilot state of each node seen in the session: appearances it still plays itself (0: asked next time) */
+  memo = new Map<string, number>();
+  /** the player's nodes of the current line */
+  nodesOfLine: { ply: number; node: string }[] = [];
+  /** where the current line's first pass started asking (index among the player's nodes; 0: from the first move) */
+  lineStartIdx = 0;
+  /** where the next repetition starts (index among the player's nodes) */
+  private repeatIdx = 0;
+  /** the first node failed in the current pass (index among the player's nodes) */
+  private firstFailIdx: number | null = null;
+  /** k of the current first pass */
+  private passK = NETERO.pauseMin;
   private activeMs = 0;
   private activeSince: number | null = null;
   private segStart: number | null = null;
@@ -210,17 +258,22 @@ export class NeteroRun {
   private curFirstClean: boolean | null = null;
   private curAvgMs: number | null = null;
 
-  constructor(public plan: Plan, public worldId: string, private now: () => number = () => performance.now()) {
+  constructor(public plan: Plan, public worldId: string, private now: () => number = () => performance.now(), private rng: Rng = Math.random) {
     this.setupLine();
+    this.startFirstPass();
   }
 
   get total() { return this.plan.lines.length; }
   get item(): PlanLine { return this.plan.lines[Math.min(this.idx, this.plan.lines.length - 1)]; }
   get color(): 'w' | 'b' { return this.item.rep.color; }
   get running() { return this.status === 'play' && !this.paused; }
-  get userTurn() { return this.running && this.ply < this.moves.length && this.chess.turn() === this.color; }
-  /** The rival's move is due (the screen plays it after a short pause). */
-  get autoDue() { return this.running && this.ply < this.moves.length && this.chess.turn() !== this.color; }
+  get userTurn() { return this.running && this.ply < this.moves.length && this.ply >= this.autoUntil && this.chess.turn() === this.color; }
+  /** A move that plays itself is due: the rival's, or any move of the autopilot (the screen plays it after a short pause). */
+  get autoDue() { return this.running && this.ply < this.moves.length && (this.ply < this.autoUntil || this.chess.turn() !== this.color); }
+  /** The line is playing itself up to where the questions start. */
+  get inAutopilot() { return this.status === 'play' && this.ply < this.autoUntil; }
+  /** The current line's first pass is asked from the first move. */
+  get lineFull() { return this.lineStartIdx === 0; }
   get expected(): string | undefined { return this.ply < this.moves.length ? this.moves[this.ply] : undefined; }
   /** Session time so far: repetitions included, pauses left out. */
   get elapsedMs() { return this.activeMs + (this.activeSince !== null ? Math.max(0, this.now() - this.activeSince) : 0); }
@@ -243,7 +296,29 @@ export class NeteroRun {
     this.nodeMs = 0;
     this.segStart = null;
     this.lastMove = undefined;
+    this.autoUntil = 0;
+    this.firstFailIdx = null;
+    this.nodesOfLine = lineNodes(it.line, it.rep.color);
     if (this.pass === 1) { this.firstMs = 0; this.firstMoves = 0; this.curFirstClean = null; this.curAvgMs = null; }
+  }
+
+  /** The ply where the player's node `i` comes (0 for the first one: the line starts from its first move). */
+  private plyOf(i: number) { return i <= 0 ? 0 : this.nodesOfLine[Math.min(i, this.nodesOfLine.length - 1)].ply; }
+
+  /**
+   * A line's first pass: it plays itself up to the first of the player's nodes that is new, failed or due
+   * (all known: the last one), unless that skips fewer than `autoMinMoves` of them. The nodes skipped spend
+   * one of their paused appearances.
+   */
+  private startFirstPass() {
+    this.passK = drawPause(this.rng);
+    const nodes = this.nodesOfLine;
+    let i = nodes.findIndex((n) => !((this.memo.get(n.node) ?? 0) > 0));
+    if (i < 0) i = nodes.length - 1;
+    if (i < NETERO.autoMinMoves) i = 0;
+    for (let j = 0; j < i; j++) this.memo.set(nodes[j].node, (this.memo.get(nodes[j].node) ?? 1) - 1);
+    this.lineStartIdx = Math.max(0, i);
+    this.autoUntil = this.plyOf(this.lineStartIdx);
   }
 
   /** The position is on the board and waiting for the player: their time starts (after `delay` of animation). */
@@ -305,6 +380,9 @@ export class NeteroRun {
       this.passFails++;
       this.attempts++;
       this.failedLines.add(this.item.key);
+      // failed (in any pass): asked at its next appearance
+      this.memo.set(node, 0);
+      if (this.firstFailIdx === null) this.firstFailIdx = Math.max(0, this.nodesOfLine.findIndex((n) => n.ply === this.ply));
       const prev = this.failLog.get(node);
       let expectedSan = exp;
       try { expectedSan = new Chess(fen).move(uciObj(exp)).san; } catch { /* keep uci */ }
@@ -316,6 +394,8 @@ export class NeteroRun {
       return { kind: 'wrong', uci };
     }
     if (!this.nodes.has(node)) this.nodes.set(node, { ok: this.attempts === 0, ms: Math.round(this.nodeMs) });
+    // right at the first try on a first pass: paused for the next k − 1 appearances
+    if (this.pass === 1 && this.attempts === 0) this.memo.set(node, this.passK - 1);
     if (this.pass === 1) { this.firstMs += this.nodeMs; this.firstMoves++; }
     this.nodeMs = 0;
     this.attempts = 0;
@@ -340,8 +420,11 @@ export class NeteroRun {
     }
     const last = this.idx + 1 >= this.total;
     const next = clean ? (last ? 'finish' : 'next') : 'repeat';
-    if (clean) this.results.push({ key: this.item.key, firstClean: !!this.curFirstClean, avgMs: this.curAvgMs, passes: this.pass });
-    this.lastEnd = { key: this.item.key, clean, pass: this.pass, avgMs: this.pass === 1 ? this.curAvgMs : null, next };
+    const full = this.lineFull;
+    if (clean) this.results.push({ key: this.item.key, firstClean: !!this.curFirstClean, avgMs: this.curAvgMs, passes: this.pass, full });
+    // the repetition starts a little before the first fail, never before the line's start
+    else this.repeatIdx = Math.max(this.lineStartIdx, (this.firstFailIdx ?? this.lineStartIdx) - NETERO.repeatContext);
+    this.lastEnd = { key: this.item.key, clean, pass: this.pass, avgMs: this.pass === 1 ? this.curAvgMs : null, full, next };
     this.status = 'between';
     this.segStart = null;
     return this.lastEnd;
@@ -356,9 +439,8 @@ export class NeteroRun {
       if (this.activeSince !== null) { this.activeMs += Math.max(0, this.now() - this.activeSince); this.activeSince = null; }
       return step;
     }
-    if (step === 'repeat') this.pass++;
-    else { this.idx++; this.pass = 1; }
-    this.setupLine();
+    if (step === 'repeat') { this.pass++; this.setupLine(); this.autoUntil = this.plyOf(this.repeatIdx); }
+    else { this.idx++; this.pass = 1; this.setupLine(); this.startFirstPass(); }
     this.status = 'play';
     // the board animates back to the start of the line before the player can read it
     this.ready(ANIM_MS);
@@ -372,7 +454,8 @@ export class NeteroRun {
       mode: this.plan.mode, scope: this.plan.scope, fp: this.plan.fp, eligible: this.plan.eligible,
       nodes: s.nodes, firstTry: s.firstTry, thinkMs: Math.round(s.thinkMs), totalMs: Math.round(this.elapsedMs),
       fails: this.fails, lines: this.total, device, day,
-      lineMs: this.results.filter((r) => r.avgMs !== null).map((r) => ({ k: r.key, ms: Math.round(r.avgMs!) })),
+      // best times only from lines asked from the first move (a partial pass is not comparable)
+      lineMs: this.results.filter((r) => r.avgMs !== null && r.full !== false).map((r) => ({ k: r.key, ms: Math.round(r.avgMs!) })),
       failed: [...this.failedLines],
       clean: this.results.filter((r) => r.firstClean).map((r) => r.key),
     };
@@ -385,7 +468,7 @@ export class NeteroRun {
 
   snapshot(): Snapshot {
     return {
-      v: 1, worldId: this.worldId, mode: this.plan.mode, scope: this.plan.scope, fp: this.plan.fp, eligible: this.plan.eligible,
+      v: 2, worldId: this.worldId, mode: this.plan.mode, scope: this.plan.scope, fp: this.plan.fp, eligible: this.plan.eligible,
       inScope: this.plan.inScope, activeInScope: this.plan.activeInScope,
       lines: this.plan.lines.map((x) => ({ key: x.key, repId: x.rep.id })),
       status: this.status, idx: this.idx, pass: this.pass, ply: this.ply, passFails: this.passFails, attempts: this.attempts,
@@ -393,6 +476,8 @@ export class NeteroRun {
       firstMs: this.firstMs, firstMoves: this.firstMoves, curFirstClean: this.curFirstClean, curAvgMs: this.curAvgMs,
       nodes: [...this.nodes.entries()], fails: this.fails, failLog: [...this.failLog.values()], failedLines: [...this.failedLines],
       results: this.results, lastEnd: this.lastEnd, activeMs: this.elapsedMs, startedAt: this.startedAt, savedAt: new Date().toISOString(),
+      autoUntil: this.autoUntil, lineStartIdx: this.lineStartIdx, repeatIdx: this.repeatIdx, firstFailIdx: this.firstFailIdx,
+      passK: this.passK, memo: [...this.memo.entries()],
     };
   }
 
@@ -400,19 +485,28 @@ export class NeteroRun {
    * Rebuild a session saved on the device. It comes back paused. Returns null when the repertoire changed
    * and a line of the session is no longer there.
    */
-  static restore(s: Snapshot, reps: Repertoire[], now?: () => number): NeteroRun | null {
-    if (!s || s.v !== 1 || !Array.isArray(s.lines) || !s.lines.length || s.status === 'done') return null;
+  static restore(s: Snapshot, reps: Repertoire[], now?: () => number, rng?: Rng): NeteroRun | null {
+    if (!s || (s.v !== 1 && s.v !== 2) || !Array.isArray(s.lines) || !s.lines.length || s.status === 'done') return null;
     const byKey = new Map<string, PlanLine>();
     for (const rep of reps) for (const line of rep.lines) { const key = lineKey(line); if (!byKey.has(key)) byKey.set(key, { key, rep, line }); }
     const lines: PlanLine[] = [];
     for (const l of s.lines) { const x = byKey.get(l.key); if (!x) return null; lines.push(x); }
     if (s.idx < 0 || s.idx >= lines.length) return null;
     const plan: Plan = { mode: s.mode, scope: s.scope, fp: s.fp, eligible: s.eligible, lines, inScope: s.inScope, activeInScope: s.activeInScope };
-    const run = new NeteroRun(plan, s.worldId, now);
+    const run = new NeteroRun(plan, s.worldId, now, rng);
     run.idx = s.idx;
     run.pass = s.pass;
     run.setupLine();
     if (s.ply > run.moves.length) return null;
+    // the autopilot (a v1 session has none: everything is asked)
+    const n = run.nodesOfLine.length;
+    const idxOk = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < Math.max(1, n);
+    run.autoUntil = typeof s.autoUntil === 'number' && s.autoUntil >= 0 && s.autoUntil <= run.moves.length ? s.autoUntil : 0;
+    run.lineStartIdx = idxOk(s.lineStartIdx) ? s.lineStartIdx! : 0;
+    run.repeatIdx = idxOk(s.repeatIdx) ? s.repeatIdx! : run.lineStartIdx;
+    run.firstFailIdx = idxOk(s.firstFailIdx) ? s.firstFailIdx! : null;
+    if (typeof s.passK === 'number' && s.passK >= NETERO.pauseMin && s.passK <= NETERO.pauseMax) run.passK = s.passK;
+    run.memo = new Map(Array.isArray(s.memo) ? s.memo.filter((e) => Array.isArray(e) && typeof e[0] === 'string' && typeof e[1] === 'number') : []);
     try { for (let i = 0; i < s.ply; i++) { const m = run.chess.move(uciObj(run.moves[i])); run.lastMove = [m.from, m.to]; } } catch { return null; }
     run.ply = s.ply;
     run.status = s.status === 'ready' ? 'ready' : s.status;
