@@ -18,6 +18,13 @@ export const NETERO = {
   queueMax: 200,
   /** Best times kept per person and repertoire. */
   bestMax: 6000,
+  /** Autopilot (v1.1): a line skips its known start only if that covers at least this many of the player's moves. */
+  autoMinMoves: 5,
+  /** A node right at the first try plays itself in its next k − 1 appearances and is asked at the k-th, k drawn in this range once per pass. */
+  pauseMin: 5,
+  pauseMax: 9,
+  /** A mandatory repetition starts this many of the player's moves before the first failed one. */
+  repeatContext: 2,
 };
 
 /** `daily` is the retired daily Netero (older apps may still send it: practice). `campaign`: the memory phase of a Campaign. */

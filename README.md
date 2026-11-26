@@ -19,13 +19,14 @@ Entrenador de repertorio de ajedrez. Repites una línea de tu repertorio con el 
 
 Entrenamiento solo de la apertura, en su propia pestaña. Principio: **el reintento es entrenamiento; la primera pasada es examen.**
 
-- **Mecánica**: cada línea se juega desde la jugada 1 y el rival responde al instante. Una jugada incorrecta suma un *fail* y se retira; tras tres intentos se puede ver la jugada. Si la línea tuvo algún fail, se repite desde el principio hasta hacerla limpia; solo entonces llega la siguiente.
+- **Mecánica**: el rival responde al instante. Una jugada incorrecta suma un *fail* y se retira; tras tres intentos se puede ver la jugada. Si la línea tuvo algún fail, se repite desde 2 jugadas propias antes del primer fallo (nunca antes de donde empezó a preguntar) hasta hacerla limpia; solo entonces llega la siguiente.
+- **Autopiloto** (v1.1): lo ya acertado en la sesión avanza solo, deprisa (200 ms por jugada), y la línea pregunta desde la primera jugada propia nueva, fallada o vencida. Cada jugada acertada a la primera se reproduce sola en sus k − 1 apariciones siguientes y vuelve a preguntarse en la k-ésima (k al azar entre 5 y 9, uno por pasada, para que el tronco vuelva en bloque). Una jugada fallada se pregunta en su siguiente aparición. Si el autopiloto cubriría menos de 5 jugadas propias, la línea se pregunta entera: los troncos cortos no cambian. Los parámetros están en `NETERO` (`shared/netero.ts`).
 - **Modalidades**: *Netero completo* (todas las líneas activas del repertorio o de un capítulo, en orden aleatorio) y *Repetir solo errores* (desde el resultado). Las 3 líneas de la Campaña usan la misma mecánica.
-- **Nota** = 100 × Precisión × Ritmo. Precisión: jugadas acertadas al primer intento / jugadas. Ritmo: min(1, t₁₀₀ / tiempo medio), con t₁₀₀ = 2,0 s (`NETERO.t100Ms` en `shared/netero.ts`, provisional). Cada jugada (posición + jugada esperada) cuenta una sola vez, la primera vez que aparece, así que el tronco común no infla la nota. El tiempo corre desde que la posición queda lista hasta la jugada correcta, sin animaciones, sin el destello del error y sin pausas. Las repeticiones no puntúan.
+- **Nota** = 100 × Precisión × Ritmo. Precisión: jugadas acertadas al primer intento / jugadas. Ritmo: min(1, t₁₀₀ / tiempo medio), con t₁₀₀ = 2,0 s (`NETERO.t100Ms` en `shared/netero.ts`, provisional). Cada jugada (posición + jugada esperada) cuenta una sola vez, la primera vez que aparece (que siempre se pregunta), así que el tronco común no infla la nota. El tiempo corre desde que la posición queda lista hasta la jugada correcta, sin animaciones, sin autopiloto, sin el destello del error y sin pausas. Las repeticiones y las jugadas que vuelven a preguntarse no puntúan. El parcial de cada línea solo se compara con tu mejor marca (y solo la actualiza) si la línea se preguntó desde la jugada 1.
 - **Récords** (con cuenta de Lichess): personales, uno por repertorio completo y por capítulo, en el Atlas y en la pantalla de Netero. Solo cuentan si todas las líneas del alcance están activas (si no, la sesión es práctica). El récord va ligado a una huella del contenido, que el servidor comprueba: si el capítulo cambia, el anterior queda como «versión anterior».
 - **Top 3**: en un repertorio compartido (desde dos cuentas con nota en el alcance), las tres mejores notas, una por persona, con su nombre de Lichess y el dispositivo. En Ajustes, «Aparecer en los rankings de Netero» permite quedar fuera sin perder los récords.
 - **Pausa**: manual o automática al cambiar de pestaña, de aplicación o de ventana; el tablero se oculta y el cronómetro se detiene. La sesión se guarda en el dispositivo tras cada jugada y se puede continuar después de cerrar la app.
-- Una primera pasada limpia otorga el emblema de la línea si aún no lo tenía.
+- Una primera pasada limpia otorga el emblema de la línea si aún no lo tenía; las jugadas del autopiloto cuentan como acertadas.
 
 ## La Campaña
 
@@ -104,6 +105,7 @@ Modo Netero y Campaña, con Lichess simulado:
 ```bash
 DEV_FAKE_LICHESS=1 npm run dev
 python3 tests/qa_netero.py /tmp/qa     # sesión con un fail y su repetición, pausa, continuar tras recargar, récord, repetir errores, Atlas, móviles
+python3 tests/qa_netero_auto.py /tmp/qa  # autopiloto: tronco largo que avanza solo, repetición cerca del fallo, indicador en móvil
 python3 tests/qa_campaign.py /tmp/qa   # Campaña: memoria, partida desde el final de la línea, continuar tras recargar, resultado, Atlas, Top 3 con dos cuentas, móviles
 ```
 

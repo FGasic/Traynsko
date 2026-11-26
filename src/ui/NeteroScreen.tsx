@@ -17,7 +17,7 @@ import type { Maia } from '../lib/maia';
 import type { SaveResult } from './TrainScreen';
 import { randomRival, rememberRival } from '../lib/rivals';
 import {
-  NeteroRun, deviceKind, fmtDuration, fmtSec, planCampaign, planErrors, planFromKeys, planFull,
+  AUTOPILOT_MS, NeteroRun, deviceKind, fmtDuration, fmtSec, planCampaign, planErrors, planFromKeys, planFull,
   type FailEntry, type LineEnd, type Plan,
 } from '../lib/netero';
 import type { NeteroResult } from '../lib/api';
@@ -203,7 +203,7 @@ export function NeteroScreen(p: Props) {
         if (api) api.move(res.move.from as Key, res.move.to as Key);
         moveSound(res.move);
         after(res.end);
-      }, x.ply === 0 ? AUTO_FIRST_MS : AUTO_MS);
+      }, x.ply === 0 ? AUTO_FIRST_MS : x.inAutopilot ? AUTOPILOT_MS : AUTO_MS);
     } else if (x.status === 'between' && x.lastEnd) {
       const e = x.lastEnd;
       timer.current = setTimeout(() => {
@@ -234,10 +234,14 @@ export function NeteroScreen(p: Props) {
   function lineEnded(e: LineEnd) {
     const x = run.current!;
     const item = x.item;
-    if (!e.clean) { sound.wrong(); showBanner({ text: 'Con errores: repítela desde el principio, sin fallos.', kind: 'bad' }, BETWEEN_MS.repeat + 300); return; }
+    if (!e.clean) { sound.wrong(); showBanner({ text: 'Con errores: repítela desde poco antes del fallo, sin fallos.', kind: 'bad' }, BETWEEN_MS.repeat + 300); return; }
     sound.phase();
     let text = e.pass > 1 ? 'Repetición limpia.' : 'Línea perfecta.';
-    if (e.avgMs !== null) {
+    if (e.avgMs !== null && !e.full) {
+      // asked from the middle (the autopilot played its start): not comparable with the best time
+      text += ` ${fmtSec(e.avgMs)}/jug`;
+      showBanner({ text, kind: 'good' }, BETWEEN_MS.clean + 500);
+    } else if (e.avgMs !== null) {
       const prev = best.current[e.key];
       text += ` ${fmtSec(e.avgMs)}/jug`;
       if (prev !== undefined) {
@@ -512,7 +516,7 @@ export function NeteroScreen(p: Props) {
   useEffect(() => {
     (window as any).__neteroState = () => {
       const x = run.current;
-      return x ? { status: x.status, paused: x.paused, idx: x.idx, total: x.total, pass: x.pass, fails: x.fails, expected: x.userTurn ? x.expected : null, fen: x.chess.fen(), nodes: x.live.nodes, nota: x.live.nota, elapsed: x.elapsedMs } : null;
+      return x ? { status: x.status, paused: x.paused, idx: x.idx, total: x.total, pass: x.pass, fails: x.fails, expected: x.userTurn ? x.expected : null, fen: x.chess.fen(), nodes: x.live.nodes, nota: x.live.nota, elapsed: x.elapsedMs, ply: x.ply, auto: x.inAutopilot, autoUntil: x.autoUntil, start: x.lineStartIdx } : null;
     };
   }, []);
 
@@ -600,13 +604,15 @@ export function NeteroScreen(p: Props) {
   const hintable = r.canHint && !hintMove;
   const meanMs = live.nodes ? live.thinkMs / live.nodes : 0;
   const recCell = r.plan.mode !== 'full' ? '—' : !r.plan.eligible ? 'Práctica' : rec ? notaText(rec.nota) : '—';
+  const auto = r.inAutopilot && !r.paused;
   const statusText = ready ? 'Pulsa «Comenzar» cuando quieras.'
     : r.paused ? 'En pausa.'
+    : auto ? 'Autopiloto: la línea avanza sola hasta la primera jugada que toca.'
     : r.status === 'between' ? (r.lastEnd?.clean ? (r.lastEnd.next === 'finish' ? 'Sesión completada.' : 'Siguiente línea…') : 'Repetición obligatoria…')
     : r.status === 'done' ? 'Sesión completada.'
     : r.userTurn ? (r.pass > 1 ? 'Repetición: sin errores para avanzar.' : 'Tu turno.')
     : 'La línea responde…';
-  const shortStatus = ready ? 'Lista' : r.paused ? 'Pausa' : r.status === 'between' ? '…' : r.userTurn ? (r.pass > 1 ? 'Repite' : 'Tu jugada') : 'Responde…';
+  const shortStatus = ready ? 'Lista' : r.paused ? 'Pausa' : auto ? 'Autopiloto' : r.status === 'between' ? '…' : r.userTurn ? (r.pass > 1 ? 'Repite' : 'Tu jugada') : 'Responde…';
   const rows = buildRows(r);
 
   return (
@@ -616,6 +622,7 @@ export function NeteroScreen(p: Props) {
           <div class="player-id">
             <span class="player-name nt-progress">Línea {Math.min(r.idx + 1, r.total)} / {r.total}</span>
             {r.pass > 1 && <span class="nt-pass" title="Repeticiones obligatorias de esta línea">Rep. {r.pass - 1}</span>}
+            {auto && <span class="nt-auto" title="Lo ya acertado en la sesión avanza solo">Autopiloto</span>}
           </div>
           <SessionClock run={r} />
         </div>
@@ -798,7 +805,7 @@ function Lobby(props: Props & {
           <div>
             <span class="eyebrow">Solo la apertura</span>
             <h1>Modo Netero</h1>
-            <p class="lede">Juega cada línea desde la jugada 1. Si fallas, la repites desde el principio hasta hacerla sin errores. La primera pasada es el examen: solo ella puntúa.</p>
+            <p class="lede">Juega cada línea. Lo que ya acertaste en la sesión avanza solo (autopiloto) y vuelve a preguntarse cada pocas líneas. Si fallas, la repites desde poco antes del fallo hasta hacerla sin errores. La primera pasada es el examen: solo ella puntúa.</p>
           </div>
         </header>
 

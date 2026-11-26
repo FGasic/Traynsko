@@ -1197,6 +1197,10 @@ html.lm-dragging, html.lm-dragging * { cursor: grabbing !important; -webkit-user
   flex: none; align-self: center; font-family: var(--font-display); font-weight: 700; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
   padding: 3px 8px; border-radius: 2px; background: var(--bad-soft); color: var(--bad); box-shadow: inset 0 0 0 1px rgba(226, 105, 76, 0.35);
 }
+.nt-auto {
+  flex: none; align-self: center; font-family: var(--font-display); font-weight: 700; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 8px; border-radius: 2px; background: rgba(4, 10, 22, 0.55); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--hair);
+}
 .clock.nt-fails { min-width: 96px; color: var(--text-dim); }
 .clock.nt-fails small { font-size: .56em; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .clock.nt-fails.has-fails { background: linear-gradient(180deg, #c4573d, #8e2f1c); color: #fff; border-color: #e2694c; }
